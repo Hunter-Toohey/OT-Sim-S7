@@ -221,6 +221,7 @@ and the DNP3 module, in outstation mode.
 docker run -it --rm --name ot-test ot-sim hivemind Procfile.single
 ```
 
+> You can edit the Procfile to use different devices. Devices 3 and 4 use S7comm.
 > You can also run a multi-device configuration, where one device acts as a DNP3
 > outstation to the Modbus client gateway by using `Procfile.multi` instead of
 > `Procfile.single` above. In this configuration, when you send the DNP3 CROB
