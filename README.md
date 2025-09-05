@@ -81,6 +81,13 @@ sudo apt update && sudo apt install \
   build-essential cmake libboost-dev libczmq-dev libxml2-dev libzmq5-dev pkg-config python3-dev python3-pip
 ```
 
+#### Install Snap7
+```
+sudo add-apt-repository ppa:gijzelaar/snap7
+sudo apt-get update
+sudo apt-get install libsnap7-dev
+```
+
 #### Install Golang
 ```
 wget -O go.tgz https://golang.org/dl/go1.21.8.linux-amd64.tar.gz \
