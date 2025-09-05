@@ -237,6 +237,36 @@ Class 0 scan.
 docker exec -it ot-test sh -c "cd testing/dnp3 && python3 master.py"
 ```
 
+
+#### TESTING S7comm
+
+To test S7comm, you can clone this repo and create an example client.
+```
+https://github.com/SCADACS/snap7/tree/master
+```
+To run an example client, run the following commands:
+```
+cd snap7
+mkdir -p bin/x86_64-linux
+cd build/unix
+make -f x86_64_linux.mk clean
+make -f x86_64_linux.mk
+cd ../../examples/cpp/x86_64-linux
+g++ -O3 -o client ../client.cpp ../snap7.cpp -L../../../build/bin/x86_64-linux -lsnap7 -lpthread -lrt
+```
+Then, in the ot-sim repo edit Procfile.single to reference a device
+with s7comm on it (devices 3 and 4 have S7comm by default), run the command:
+```
+sudo docker run -it --rm --name ot-test -p 102:102 ot-sim hivemind Procfile.single
+```
+Back in `/snap7/examples/cpp/x86_64-linux`, run:
+
+```
+LD_LIBRARY_PATH=../../../build/bin/x86_64-linux ./client 0.0.0.0
+```
+You should see the the S7 client is able to connect to your OT-sim S7 server on port 102.
+
+
 ## COPYRIGHT
 
 Copyright (C) 2021-2022 Patria Security, LLC
