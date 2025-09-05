@@ -40,9 +40,9 @@ RUN apt update && apt install -y \
     wget
 
 # TODO: add TARGETARCH support for Snap7.
-RUN wget -O snap7.7z https://versaweb.dl.sourceforge.net/project/snap7/1.4.2/snap7-full-1.4.2.7z \
-  && 7zz -o/tmp x snap7.7z && rm snap7.7z \
-  && make -C /tmp/snap7-full-1.4.2/build/unix -f x86_64_linux.mk install LibInstall=/usr/local/lib
+RUN wget --no-check-certificate -O snap7.7z https://versaweb.dl.sourceforge.net/project/snap7/1.4.2/snap7-full-1.4.2.7z \
+    && 7zz -o/tmp x snap7.7z && rm snap7.7z \
+    && make -C /tmp/snap7-full-1.4.2/build/unix -f x86_64_linux.mk install LibInstall=/usr/local/lib
 
 ADD .git /usr/local/src/ot-sim/.git
 
@@ -61,11 +61,19 @@ RUN apt update && apt install -y \
   bash-completion curl git tmux tree vim wget xz-utils \
   libczmq4 libsodium23 libxml2 libzmq5 python3-pip
 
-RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg \
-  | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null \
-  && curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list \
-  | tee /etc/apt/sources.list.d/tailscale.list \
-  && apt update && apt install -y tailscale
+# Install dependencies for Tailscale
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        gnupg \
+        ca-certificates \
+        iptables \
+    && update-ca-certificates
+
+# Download and install Tailscale
+RUN curl -fsSLk -o /tmp/tailscale.deb https://pkgs.tailscale.com/stable/tailscale_1.84.0_amd64.deb \
+    && dpkg -i /tmp/tailscale.deb \
+    && apt-get install -yf \
+    && rm /tmp/tailscale.deb
 
 WORKDIR /root
 
@@ -98,11 +106,19 @@ RUN apt update && apt install -y \
   bash-completion curl git mbpoll tmux tree vim wget xz-utils \
   build-essential cmake libczmq4 libsodium23 libxml2 libzmq5 python3-dev python3-pip
 
-RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg \
-  | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null \
-  && curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list \
-  | tee /etc/apt/sources.list.d/tailscale.list \
-  && apt update && apt install -y tailscale
+# Install dependencies for Tailscale
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        gnupg \
+        ca-certificates \
+        iptables \
+    && update-ca-certificates
+
+# Download and install Tailscale
+RUN curl -fsSLk -o /tmp/tailscale.deb https://pkgs.tailscale.com/stable/tailscale_1.84.0_amd64.deb \
+    && dpkg -i /tmp/tailscale.deb \
+    && apt-get install -yf \
+    && rm /tmp/tailscale.deb
 
 RUN wget -O hivemind.gz https://github.com/DarthSim/hivemind/releases/download/v1.1.0/hivemind-v1.1.0-linux-amd64.gz \
   && gunzip --stdout hivemind.gz > /usr/local/bin/hivemind \
