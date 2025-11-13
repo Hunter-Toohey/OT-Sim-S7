@@ -47,11 +47,6 @@
       <tag>line-650632.closed</tag>
       <address>0</address>
     </input>
-    <output type="binary">
-      <tag>line-650632.closed</tag>
-       <address>10</address>
-      <sbo>false</sbo>
-    </output>
     <input type="analog">
       <tag>line-650632.kW</tag>
       <address>0</address>
