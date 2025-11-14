@@ -44,12 +44,26 @@
   <s7comm name="s7comm-server" mode="server">
     <endpoint>0.0.0.0:102</endpoint>
     <input type="binary">
+      <address>0</address>
       <tag>line-650632.closed</tag>
-      <address>0</address>
+      <svar>Group1Var1</svar>
+      <evar>Group2Var1</evar>
+      <class>Class1</class>
     </input>
+    <output type="binary">
+      <address>10</address>
+      <tag>line-650632.closed</tag>
+      <svar>Group10Var2</svar>
+      <evar>Group11Var2</evar>
+      <class>Class1</class>
+      <sbo>false</sbo>
+    </output>
     <input type="analog">
-      <tag>line-650632.kW</tag>
       <address>0</address>
+      <tag>line-650632.kW</tag>
+      <svar>Group30Var6</svar>
+      <evar>Group32Var6</evar>
+      <class>Class1</class>
     </input>
   </s7comm>
   <io name="helics-federate">

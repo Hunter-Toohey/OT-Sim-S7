@@ -11,23 +11,20 @@ template <typename T>
 struct Point {
   std::uint16_t address {};
   std::string   tag     {};
-
   T value {};
-
   bool output {};
   bool sbo {};
-
-  double deadband;
+  double deadband {};
 };
 
-typedef Point<bool> BinaryInputPoint;
-typedef Point<float> AnalogInputPoint;
+using BinaryInputPoint  = Point<bool>;
+using BinaryOutputPoint = Point<bool>;
 
-typedef Point<bool> BinaryOutputPoint;
-typedef Point<float> AnalogOutputPoint;
+using AnalogInputPoint  = Point<float>;
+using AnalogOutputPoint = Point<float>;
 
-typedef std::shared_ptr<otsim::msgbus::Pusher> Pusher;
-typedef std::shared_ptr<otsim::msgbus::MetricsPusher> MetricsPusher;
+using Pusher = std::shared_ptr<otsim::msgbus::Pusher>;
+using MetricsPusher = std::shared_ptr<otsim::msgbus::MetricsPusher>;
 
 } // namespace s7
 } // namespace otsim
