@@ -6,7 +6,6 @@
 #include <thread>
 
 #include "common.hpp"
-
 #include "msgbus/envelope.hpp"
 #include "msgbus/metrics.hpp"
 #include "msgbus/pusher.hpp"
@@ -22,14 +21,14 @@ struct ServerConfig {
     std::string logLevel = "info";
 };
 
-class Server : public std::enable_shared_from_this<Server>{
+class Server : public std::enable_shared_from_this<Server> {
 public:
     static std::shared_ptr<Server> Create(ServerConfig config, Pusher pusher) {
         return std::make_shared<Server>(config, pusher);
     }
 
     Server(ServerConfig config, Pusher pusher);
-    ~Server() {};
+    ~Server() {}
 
     std::string ID() { return config.id; }
 
@@ -47,24 +46,30 @@ public:
     const AnalogOutputPoint* GetAnalogOutput(const uint16_t address);
 
     void ResetOutputs();
-
     void HandleMsgBusStatus(const otsim::msgbus::Envelope<otsim::msgbus::Status>& env);
 
+    static void OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr);
+
 private:
-  ServerConfig config;
+    ServerConfig config;
 
-  Pusher pusher;
-  MetricsPusher metrics;
+    Pusher pusher;
+    MetricsPusher metrics;
 
-  std::map<std::uint16_t, BinaryInputPoint> binaryInputs;
-  std::map<std::uint16_t, BinaryOutputPoint> binaryOutputs;
-  std::map<std::uint16_t, AnalogInputPoint> analogInputs;
-  std::map<std::uint16_t, AnalogOutputPoint> analogOutputs;
+    std::shared_ptr<TS7Server> ts7server;
 
-  std::map<std::string, otsim::msgbus::Point> points;
-  std::mutex pointsMu;
+    std::map<std::uint16_t, BinaryInputPoint> binaryInputs;
+    std::map<std::uint16_t, BinaryOutputPoint> binaryOutputs;
+    std::map<std::uint16_t, AnalogInputPoint> analogInputs;
+    std::map<std::uint16_t, AnalogOutputPoint> analogOutputs;
 
-  std::atomic<bool> running;
+    std::map<std::string, otsim::msgbus::Point> points;
+    std::mutex pointsMu;
+
+    std::atomic<bool> running{false};
+    
+    byte paBuffer[256] = {0};
+    byte dbBuffer[1024] = {0};
 };
 
 } // namespace s7
