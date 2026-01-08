@@ -159,7 +159,7 @@ namespace s7 {
           continue;
         }
         auto& point = points[kv.second.tag];
-        WriteBinaryToS7(mkBuffer, sizeof(this->mkBuffer), addr, point.value != 0);
+        WriteBinaryToS7(peBuffer, sizeof(this->peBuffer), addr, point.value != 0);
         //log that we updated an input
         std::cout << fmt::format("[{}] updated binary input {} to {}", config.id, addr, point.value) << std::endl;
         metrics->IncrMetric("s7_binary_write_count");
