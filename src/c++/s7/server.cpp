@@ -9,9 +9,6 @@
 // Define byte type for Snap7 compatibility
 using byte = std::uint8_t;
 
-// Fix Srv_SetCpuProtectionLevel declaration to use TS7Server*
-extern "C" int Srv_SetCpuProtectionLevel(TS7Server* Server, int level);
-
 namespace otsim {
 namespace s7 {
   //when a client talks to a server, this function packages that data into a format understandle by the server
@@ -88,10 +85,16 @@ namespace s7 {
         return;
     }
 
-    // Try to disable CPU protection using declared Snap7 API after starting
-    int protResult = Srv_SetCpuProtectionLevel(ts7server.get(), 0);  // 0 = No protection
-    if (protResult != 0) {
-      std::cout << "[S7] Note: Could not set protection level (this may be normal)" << std::endl;
+    // Try to disable CPU protection using SetParam with different parameter numbers
+    // Some Snap7 versions store protection level in server parameters
+    int protLevel = 0;  // 0 = No protection
+    int protResult1 = ts7server->SetParam(1000, &protLevel);  // Try various parameter numbers
+    int protResult2 = ts7server->SetParam(0x1000, &protLevel);
+    int protResult3 = ts7server->SetParam(0x2000, &protLevel);
+    if (protResult1 != 0 && protResult2 != 0 && protResult3 != 0) {
+      std::cout << "[S7] Note: Could not set protection level via SetParam (this may be normal)" << std::endl;
+    } else {
+      std::cout << "[S7] Successfully set protection level via SetParam" << std::endl;
     }
 
     //register memory buffers for PA and DB areas
