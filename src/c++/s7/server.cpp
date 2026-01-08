@@ -65,11 +65,18 @@ namespace s7 {
     }
     metrics->Start(pusher, config.id);
     running = true;
-    //start server before registering areas, otherwise we segfault
-    if (ts7server->Start() != 0) {
-        std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
-        return;
+
+    // Initialize first 16 bytes of each buffer with test values
+    for (int i = 0; i < 16; ++i) {
+      paBuffer[i] = static_cast<byte>(i + 1);  // MB0..MB15: 1,2,3,...,16
+      ebBuffer[i] = static_cast<byte>(i + 17); // EB0..EB15: 17,18,19,...,32
+      abBuffer[i] = static_cast<byte>(i + 33); // AB0..AB15: 33,34,35,...,48
+      tBuffer[i] = static_cast<byte>(i + 49);  // T0..T15: 49,50,51,...,64
+      zBuffer[i] = static_cast<byte>(i + 65);  // Z0..Z15: 65,66,67,...,80
+      dbBuffer[i] = static_cast<byte>(i + 1);  // Also DB1 0..15 for MB if needed
     }
+    std::cout << "[S7] Buffers initialized with test values." << std::endl;
+
     //register memory buffers for PA and DB areas
     //PE, PA, DB, and MK are different types of Siemens memory areas
     int mkResult = ts7server->RegisterArea(srvAreaMK, 0, paBuffer, sizeof(paBuffer));
@@ -108,23 +115,46 @@ namespace s7 {
       std::cerr << "[S7] " << SrvErrorText(dbResult) << std::endl;
       return;
     }
+    // Register additional DB areas for EB, AB, T, Z if client uses DB numbers
+    int db2Result = ts7server->RegisterArea(srvAreaDB, 2, ebBuffer, sizeof(ebBuffer));
+    if (db2Result != 0) {
+      std::cerr << "[S7] Failed to register DB2 area! Error code: " << db2Result << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(db2Result) << std::endl;
+      return;
+    }
+    int db3Result = ts7server->RegisterArea(srvAreaDB, 3, abBuffer, sizeof(abBuffer));
+    if (db3Result != 0) {
+      std::cerr << "[S7] Failed to register DB3 area! Error code: " << db3Result << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(db3Result) << std::endl;
+      return;
+    }
+    int db4Result = ts7server->RegisterArea(srvAreaDB, 4, tBuffer, sizeof(tBuffer));
+    if (db4Result != 0) {
+      std::cerr << "[S7] Failed to register DB4 area! Error code: " << db4Result << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(db4Result) << std::endl;
+      return;
+    }
+    int db5Result = ts7server->RegisterArea(srvAreaDB, 5, zBuffer, sizeof(zBuffer));
+    if (db5Result != 0) {
+      std::cerr << "[S7] Failed to register DB5 area! Error code: " << db5Result << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(db5Result) << std::endl;
+      return;
+    }
+
     int cbResult = ts7server->SetRWAreaCallback(rwCallback, this);
     if (cbResult != 0) {
       std::cerr << "[S7] Failed to register RW-area callback! Error code: " << cbResult << std::endl;
       std::cerr << "[S7] " << SrvErrorText(cbResult) << std::endl;
     }
 
+    //start server before registering areas, otherwise we segfault
+    if (ts7server->Start() != 0) {
+        std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
+        return;
+    }
+
     //debugging output
     std::cout << "[S7] Server started and memory areas registered." << std::endl;
-
-    // Initialize first 16 bytes of each buffer with test values
-    for (int i = 0; i < 16; ++i) {
-      paBuffer[i] = static_cast<byte>(i + 1);  // MB0..MB15: 1,2,3,...,16
-      ebBuffer[i] = static_cast<byte>(i + 17); // EB0..EB15: 17,18,19,...,32
-      abBuffer[i] = static_cast<byte>(i + 33); // AB0..AB15: 33,34,35,...,48
-      tBuffer[i] = static_cast<byte>(i + 49);  // T0..T15: 49,50,51,...,64
-      zBuffer[i] = static_cast<byte>(i + 65);  // Z0..Z15: 65,66,67,...,80
-    }
 
     //this is the main running loop, it scans the subscribed points and writes them to memory
     while (running) {
