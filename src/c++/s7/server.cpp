@@ -74,17 +74,17 @@ namespace s7 {
       std::cerr << "[S7] " << SrvErrorText(cpuResult) << std::endl;
     }
 
-    // Try to set protection level through server parameters before starting
-    int protLevel = 0;  // 0 = No protection
-    int protResult = ts7server->SetParam(0, &protLevel);  // Try parameter 0 for protection
-    if (protResult != 0) {
-      std::cout << "[S7] Note: Could not set protection level (this may be normal)" << std::endl;
-    }
-
     //start server before registering areas, otherwise we segfault
     if (ts7server->Start() != 0) {
         std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
         return;
+    }
+
+    // Disable CPU protection to allow block uploads (must be after Start())
+    int protResult = ts7server->SetCpuProtectionLevel(0);  // 0 = S7ProtectionLevelNone
+    if (protResult != 0) {
+      std::cerr << "[S7] Failed to set CPU protection level! Error code: " << protResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(protResult) << std::endl;
     }
 
     //register memory buffers for PA and DB areas
