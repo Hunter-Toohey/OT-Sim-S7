@@ -952,6 +952,5 @@ TextString SrvErrorText(int Error);
 TextString ParErrorText(int Error);
 TextString SrvEventText(TSrvEvent *Event);
 
-
 #endif // __cplusplus
 #endif // snap7_h
