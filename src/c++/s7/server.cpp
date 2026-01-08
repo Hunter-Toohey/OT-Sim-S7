@@ -198,6 +198,7 @@ namespace s7 {
 
   //when a client writes into server memory this function updates the message bus
   void Server::OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr) {
+    auto server = reinterpret_cast<Server*>(usrPtr);
     if (area == srvAreaPA) {
       if (static_cast<size_t>(start) < sizeof(server->paBuffer)) {
         bool val = server->paBuffer[start] != 0;
