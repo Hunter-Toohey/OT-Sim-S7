@@ -49,6 +49,9 @@ public:
     void HandleMsgBusStatus(const otsim::msgbus::Envelope<otsim::msgbus::Status>& env);
 
     static void OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr);
+    static void OnServerEvent(void *usrPtr, PSrvEvent PEvent, int Size);
+
+    void InitializeSampleBlocks();
 
 private:
     ServerConfig config;
@@ -70,6 +73,10 @@ private:
     
     byte paBuffer[256] = {0};
     byte dbBuffer[1024] = {0};
+
+    // Block data for upload operations
+    std::map<std::pair<byte, int>, std::vector<byte>> blocks;
+    std::mutex blocksMu;
 };
 
 } // namespace s7

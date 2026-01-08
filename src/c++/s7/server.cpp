@@ -51,6 +51,9 @@ namespace s7 {
       metrics->NewMetric("Counter", "s7_binary_write_count", "number of S7 binary writes processed");
       metrics->NewMetric("Counter", "s7_analog_write_count", "number of S7 analog writes processed");
     }
+
+    // Initialize sample blocks for upload operations
+    InitializeSampleBlocks();
   }
   
   //run the server loop and update memory
@@ -68,6 +71,14 @@ namespace s7 {
         std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
         return;
     }
+
+    // Set CPU to RUN mode
+    int cpuResult = ts7server->SetCpuStatus(S7CpuStatusRun);
+    if (cpuResult != 0) {
+      std::cerr << "[S7] Failed to set CPU status! Error code: " << cpuResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(cpuResult) << std::endl;
+    }
+
     //register memory buffers for PA and DB areas
     //PE, PA, DB, and MK are different types of Siemens memory areas
     int mkResult = ts7server->RegisterArea(srvAreaMK, 0, paBuffer, sizeof(paBuffer));
@@ -87,6 +98,18 @@ namespace s7 {
       std::cerr << "[S7] Failed to register RW-area callback! Error code: " << cbResult << std::endl;
       std::cerr << "[S7] " << SrvErrorText(cbResult) << std::endl;
     }
+
+    // Set up events callback to handle block operations
+    int evtResult = ts7server->SetEventsCallback(OnServerEvent, this);
+    if (evtResult != 0) {
+      std::cerr << "[S7] Failed to register events callback! Error code: " << evtResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(evtResult) << std::endl;
+    }
+
+    // Disable upload events to prevent clients from attempting block uploads
+    longword currentMask = ts7server->GetEventsMask();
+    longword newMask = currentMask & ~evcUpload;  // Clear the upload event bit
+    ts7server->SetEventsMask(newMask);
 
     //debugging output
     std::cout << "[S7] Server started and memory areas registered." << std::endl;
@@ -155,8 +178,23 @@ namespace s7 {
     }
   }
 
-  //when a client writes into server memory this function updates the message bus
-  void Server::OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr) {
+  //server event callback for handling block operations
+  void Server::OnServerEvent(void *usrPtr, PSrvEvent PEvent, int Size) {
+    auto server = reinterpret_cast<Server*>(usrPtr);
+    
+    std::cout << fmt::format("[{}] Server event received - Code: 0x{:08X}, RetCode: 0x{:04X}, Param1: {}, Param2: {}", 
+                            server->config.id, PEvent->EvtCode, PEvent->EvtRetCode, PEvent->EvtParam1, PEvent->EvtParam2) << std::endl;
+    
+    // Handle block upload events
+    if (PEvent->EvtCode == evcUpload) {
+      std::cout << fmt::format("[{}] Block upload requested - Type: {}, Number: {} - NOT SUPPORTED", 
+                              server->config.id, PEvent->EvtParam1, PEvent->EvtParam2) << std::endl;
+      
+      // This server is designed for data exchange, not PLC programming
+      // Return "not implemented" to indicate the operation is not supported
+      PEvent->EvtRetCode = evrNotImplemented;
+    }
+  }
     auto server = reinterpret_cast<Server*>(usrPtr);
     std::unique_lock<std::mutex> lock(server->pointsMu);
 
@@ -344,6 +382,32 @@ namespace s7 {
         points[p.tag] = p;
       }
     }
+  }
+
+  // Initialize sample blocks that can be uploaded
+  void Server::InitializeSampleBlocks() {
+    std::unique_lock<std::mutex> lock(blocksMu);
+    
+    // Create a simple SDB (System Data Block) 0
+    // SDB 0 typically contains hardware configuration
+    std::vector<byte> sdb0 = {
+      // SDB header (simplified)
+      0x00, 0x1C,  // Length
+      0x00, 0x01,  // Block number
+      0x42,        // Block type (SDB)
+      0x00,        // Version
+      // Some basic configuration data
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00
+    };
+    
+    blocks[{Block_SDB, 0}] = sdb0;
+    
+    std::cout << fmt::format("[{}] Initialized {} sample blocks for upload", config.id, blocks.size()) << std::endl;
   }
 
 } // namespace s7
