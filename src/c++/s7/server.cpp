@@ -106,11 +106,6 @@ namespace s7 {
       std::cerr << "[S7] " << SrvErrorText(evtResult) << std::endl;
     }
 
-    // Disable upload events to prevent clients from attempting block uploads
-    longword currentMask = ts7server->GetEventsMask();
-    longword newMask = currentMask & ~evcUpload;  // Clear the upload event bit
-    ts7server->SetEventsMask(newMask);
-
     //debugging output
     std::cout << "[S7] Server started and memory areas registered." << std::endl;
 
