@@ -157,6 +157,14 @@ namespace s7 {
         metrics->IncrMetric("s7_binary_write_count");
       }
 
+      // Debug: Print PA buffer contents (first 32 bytes)
+      std::string bufferHex;
+      for (int i = 0; i < std::min(32, (int)sizeof(paBuffer)); i++) {
+        bufferHex += fmt::format("{:02X} ", paBuffer[i]);
+        if ((i + 1) % 16 == 0) bufferHex += "\n                ";
+      }
+      std::cout << fmt::format("[{}] PA Buffer: {}", config.id, bufferHex) << std::endl;
+
       //write binary outputs to S7 memory
       for (auto& kv : binaryOutputs) {
         const auto& addr = kv.first;
