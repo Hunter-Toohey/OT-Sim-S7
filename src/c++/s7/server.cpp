@@ -66,17 +66,25 @@ namespace s7 {
     }
     metrics->Start(pusher, config.id);
     running = true;
-    //start server before registering areas, otherwise we segfault
-    if (ts7server->Start() != 0) {
-        std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
-        return;
-    }
 
-    // Set CPU to RUN mode
+    // Set CPU status to RUN and try to disable protection before starting server
     int cpuResult = ts7server->SetCpuStatus(S7CpuStatusRun);
     if (cpuResult != 0) {
       std::cerr << "[S7] Failed to set CPU status! Error code: " << cpuResult << std::endl;
       std::cerr << "[S7] " << SrvErrorText(cpuResult) << std::endl;
+    }
+
+    // Try to set protection level through server parameters before starting
+    int protLevel = 0;  // 0 = No protection
+    int protResult = ts7server->SetParam(0, &protLevel);  // Try parameter 0 for protection
+    if (protResult != 0) {
+      std::cout << "[S7] Note: Could not set protection level (this may be normal)" << std::endl;
+    }
+
+    //start server before registering areas, otherwise we segfault
+    if (ts7server->Start() != 0) {
+        std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
+        return;
     }
 
     //register memory buffers for PA and DB areas
@@ -110,13 +118,6 @@ namespace s7 {
     longword currentMask = ts7server->GetEventsMask();
     longword newMask = currentMask | evcUpload;  // Enable the upload event bit
     ts7server->SetEventsMask(newMask);
-
-    // Set CPU protection level to allow block operations
-    int protResult = ts7server->SetCpuProtectionLevel(0);  // 0 = No protection
-    if (protResult != 0) {
-      std::cerr << "[S7] Failed to set CPU protection level! Error code: " << protResult << std::endl;
-      std::cerr << "[S7] " << SrvErrorText(protResult) << std::endl;
-    }
 
     //debugging output
     std::cout << "[S7] Server started and memory areas registered." << std::endl;
