@@ -75,8 +75,9 @@ private:
 
     std::atomic<bool> running{false};
     
-    byte paBuffer[256] = {0};
-    byte dbBuffer[1024] = {0};
+    byte peBuffer[256] = {0};  // Binary inputs (PE - Process Eingänge)
+    byte paBuffer[256] = {0};  // Binary outputs (PA - Process Ausgänge)
+    byte dbBuffer[1024] = {0}; // Analog data and data blocks
 };
 
 } // namespace s7

@@ -96,12 +96,20 @@ namespace s7 {
         std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
         return;
     }
-    //register memory buffers for PA and DB areas
-    //PE, PA, DB, and MK are different types of Siemens memory areas
-    int mkResult = ts7server->RegisterArea(srvAreaMK, 0, paBuffer, sizeof(paBuffer));
-    if (mkResult != 0) {
-      std::cerr << "[S7] Failed to register MK area! Error code: " << mkResult << std::endl;
-      std::cerr << "[S7] " << SrvErrorText(mkResult) << std::endl;
+    //register memory buffers for PE, PA, and DB areas
+    //PE = Process Inputs (digital inputs from sensors)
+    //PA = Process Outputs (digital outputs to actuators)
+    //DB = Data Blocks (analog data and structured data)
+    int peResult = ts7server->RegisterArea(srvAreaPE, 0, peBuffer, sizeof(peBuffer));
+    if (peResult != 0) {
+      std::cerr << "[S7] Failed to register PE area! Error code: " << peResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(peResult) << std::endl;
+      return;
+    }
+    int paResult = ts7server->RegisterArea(srvAreaPA, 0, paBuffer, sizeof(paBuffer));
+    if (paResult != 0) {
+      std::cerr << "[S7] Failed to register PA area! Error code: " << paResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(paResult) << std::endl;
       return;
     }
     int dbResult = ts7server->RegisterArea(srvAreaDB, 1, dbBuffer, sizeof(dbBuffer));
@@ -151,24 +159,24 @@ namespace s7 {
           continue;
         }
         auto& point = points[kv.second.tag];
-        WriteBinaryToS7(paBuffer, sizeof(this->paBuffer), addr, point.value != 0);
+        WriteBinaryToS7(mkBuffer, sizeof(this->mkBuffer), addr, point.value != 0);
         //log that we updated an input
         std::cout << fmt::format("[{}] updated binary input {} to {}", config.id, addr, point.value) << std::endl;
         metrics->IncrMetric("s7_binary_write_count");
       }
 
-      // Debug: Print PA buffer contents (first 32 bytes)
+      // Debug: Print PE buffer contents (first 32 bytes)
       std::string bufferHex;
-      for (int i = 0; i < std::min(32, (int)sizeof(paBuffer)); i++) {
-        bufferHex += fmt::format("{:02X} ", paBuffer[i]);
+      for (int i = 0; i < std::min(32, (int)sizeof(peBuffer)); i++) {
+        bufferHex += fmt::format("{:02X} ", peBuffer[i]);
         if ((i + 1) % 16 == 0) bufferHex += "\n                ";
       }
-      std::cout << fmt::format("[{}] PA Buffer: {}", config.id, bufferHex) << std::endl;
+      std::cout << fmt::format("[{}] PE Buffer (Inputs): {}", config.id, bufferHex) << std::endl;
     
       // Debug: Show registered area information
-      std::cout << fmt::format("[{}] Registered as S7 area code: srvAreaPA ({})", config.id, srvAreaPA) << std::endl;
+      std::cout << fmt::format("[{}] Registered as S7 area code: srvAreaPE ({})", config.id, srvAreaPE) << std::endl;
 
-      //write binary outputs to S7 memory
+      //write binary outputs to S7 memory (PA area - process outputs)
       for (auto& kv : binaryOutputs) {
         const auto& addr = kv.first;
         if (points.find(kv.second.tag) == points.end()) {
@@ -176,11 +184,22 @@ namespace s7 {
           continue;
         }
         auto& point = points[kv.second.tag];
-        WriteBinaryToS7(dbBuffer, sizeof(this->dbBuffer), addr, point.value != 0);
+        WriteBinaryToS7(paBuffer, sizeof(this->paBuffer), addr, point.value != 0);
         std::cout << fmt::format("[{}] updated binary output {} to {}", config.id, addr, point.value) << std::endl;
         WriteBinary(addr, point.value != 0);
         metrics->IncrMetric("s7_binary_write_count");
       }
+
+      // Debug: Print PA buffer contents (first 32 bytes)
+      std::string paBufferHex;
+      for (int i = 0; i < std::min(32, (int)sizeof(paBuffer)); i++) {
+        paBufferHex += fmt::format("{:02X} ", paBuffer[i]);
+        if ((i + 1) % 16 == 0) paBufferHex += "\n                ";
+      }
+      std::cout << fmt::format("[{}] PA Buffer (Outputs): {}", config.id, paBufferHex) << std::endl;
+    
+      // Debug: Show registered area information
+      std::cout << fmt::format("[{}] Registered as S7 area code: srvAreaPA ({})", config.id, srvAreaPA) << std::endl;
 
       // Debug: Print DB buffer contents (first 32 bytes)
       std::string dbBufferHex;
@@ -231,7 +250,7 @@ namespace s7 {
     std::unique_lock<std::mutex> lock(server->pointsMu);
 
     //access the registered buffers
-    if (area == srvAreaMK) {
+    if (area == srvAreaPA) {
       if (static_cast<size_t>(start) < sizeof(server->paBuffer)) {
         bool val = server->paBuffer[start] != 0;
         if (server->binaryOutputs.find(start) == server->binaryOutputs.end()) {
@@ -246,7 +265,7 @@ namespace s7 {
         server->points[tag].value = val ? 1.0 : 0.0;
         server->WriteBinary(start, val);
       } else {
-        std::cerr << "[S7] OnClientWrite MK out of bounds: start=" << start << std::endl;
+        std::cerr << "[S7] OnClientWrite PA out of bounds: start=" << start << std::endl;
       }
     } else if (area == srvAreaDB) {
       if (static_cast<size_t>(start) + sizeof(float) <= sizeof(server->dbBuffer)) {
@@ -524,11 +543,11 @@ namespace s7 {
                 server->config.id, pTag->Area, pTag->DBNumber, pTag->Start, pTag->Size) << std::endl;
       
       // Provide the data based on area type
-      if (pTag->Area == S7AreaPA || pTag->Area == S7AreaMK) {
-        // Binary input area
-        if (pTag->Start < (int)sizeof(server->paBuffer)) {
-          memcpy(pUsrData, &server->paBuffer[pTag->Start], 
-                 std::min(pTag->Size, (int)(sizeof(server->paBuffer) - pTag->Start)));
+      if (pTag->Area == S7AreaPE) {
+        // Binary input area (PE - process inputs)
+        if (pTag->Start < (int)sizeof(server->peBuffer)) {
+          memcpy(pUsrData, &server->peBuffer[pTag->Start], 
+                 std::min(pTag->Size, (int)(sizeof(server->peBuffer) - pTag->Start)));
           return 0; // Success
         }
       } else if (pTag->Area == S7AreaDB) {
@@ -548,8 +567,8 @@ namespace s7 {
                 server->config.id, pTag->Area, pTag->DBNumber, pTag->Start, pTag->Size) << std::endl;
       
       // Process write based on area type
-      if (pTag->Area == S7AreaPA || pTag->Area == S7AreaMK) {
-        // Binary output area
+      if (pTag->Area == S7AreaPA) {
+        // Binary output area (PA - process outputs)
         if (pTag->Start < (int)sizeof(server->paBuffer)) {
           memcpy(&server->paBuffer[pTag->Start], pUsrData, 
                  std::min(pTag->Size, (int)(sizeof(server->paBuffer) - pTag->Start)));
