@@ -225,6 +225,14 @@ namespace s7 {
         metrics->IncrMetric("s7_analog_write_count");
       }
 
+      // Debug: Print DB buffer contents after analog inputs (first 32 bytes)
+      std::string dbBufferHexInputs;
+      for (int i = 0; i < std::min(32, (int)sizeof(dbBuffer)); i++) {
+        dbBufferHexInputs += fmt::format("{:02X} ", dbBuffer[i]);
+        if ((i + 1) % 16 == 0) dbBufferHexInputs += "\n                ";
+      }
+      std::cout << fmt::format("[{}] DB Buffer (Analog Inputs): {}", config.id, dbBufferHexInputs) << std::endl;
+
       //write analog outputs to S7 memory
       for (auto& kv : analogOutputs) {
         const auto& addr = kv.first;
@@ -238,6 +246,14 @@ namespace s7 {
         WriteAnalog(addr, point.value);
         metrics->IncrMetric("s7_analog_write_count");
       }
+
+      // Debug: Print DB buffer contents after analog outputs (first 32 bytes)
+      std::string dbBufferHexOutputs;
+      for (int i = 0; i < std::min(32, (int)sizeof(dbBuffer)); i++) {
+        dbBufferHexOutputs += fmt::format("{:02X} ", dbBuffer[i]);
+        if ((i + 1) % 16 == 0) dbBufferHexOutputs += "\n                ";
+      }
+      std::cout << fmt::format("[{}] DB Buffer (Analog Outputs): {}", config.id, dbBufferHexOutputs) << std::endl;
 
       lock.unlock();
       std::this_thread::sleep_for(std::chrono::seconds(1));
