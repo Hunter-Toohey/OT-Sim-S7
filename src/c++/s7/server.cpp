@@ -111,6 +111,13 @@ namespace s7 {
     longword newMask = currentMask | evcUpload;  // Enable the upload event bit
     ts7server->SetEventsMask(newMask);
 
+    // Set CPU protection level to allow block operations
+    int protResult = ts7server->SetCpuProtectionLevel(0);  // 0 = No protection
+    if (protResult != 0) {
+      std::cerr << "[S7] Failed to set CPU protection level! Error code: " << protResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(protResult) << std::endl;
+    }
+
     //debugging output
     std::cout << "[S7] Server started and memory areas registered." << std::endl;
 
@@ -197,7 +204,7 @@ namespace s7 {
       
       if (it != server->blocks.end()) {
         std::cout << fmt::format("[{}] Providing sample block data ({} bytes)", server->config.id, it->second.size()) << std::endl;
-        // For now, just allow the upload to proceed with sample data
+        // Block upload is now allowed due to CPU protection level setting
         PEvent->EvtRetCode = 0; // Success
       } else {
         std::cout << fmt::format("[{}] Block not found - rejecting upload", server->config.id) << std::endl;
