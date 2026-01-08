@@ -69,6 +69,9 @@ namespace s7 {
 
     // Initialize first 16 bytes of each buffer with test values
     for (int i = 0; i < 16; ++i) {
+      paBuffer[i] = static_cast<byte>(i + 1);  // MB0..MB15: 1,2,3,...,16
+      ebBuffer[i] = static_cast<byte>(i + 17); // EB0..EB15: 17,18,19,...,32
+      abBuffer[i] = static_cast<byte>(i + 33); // AB0..AB15: 33,34,35,...,48
       tBuffer[i] = static_cast<byte>(i + 49);  // T0..T15: 49,50,51,...,64
       zBuffer[i] = static_cast<byte>(i + 65);  // Z0..Z15: 65,66,67,...,80
     }
@@ -156,13 +159,6 @@ namespace s7 {
     //this is the main running loop, it scans the subscribed points and writes them to memory
     while (running) {
       std::unique_lock<std::mutex> lock(pointsMu);
-
-      // --- TEST PATCH: write MB0..MB15 non-zero values ---
-      for (int i = 0; i < 16; ++i) {
-          dbBuffer[i] = static_cast<byte>(i + 1);  // DB1 0..15 = 1,2,...,16 (assuming client reads MB from DB1)
-          std::cout << fmt::format("[{}] test write DB1[{}] = {}", config.id, i, dbBuffer[i]) << std::endl;
-      }
-      // ------------------------------------------------------
 
       //write binary inputs S7 memory
       for (auto& kv : binaryInputs) {
