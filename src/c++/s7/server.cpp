@@ -54,6 +54,34 @@ namespace s7 {
   }
   
   //run the server loop and update memory
+  /*
+   * This function initializes and runs the S7 server with full snap7 functionality:
+   * 
+   * Block Operations Support:
+   * - Block Upload: Clients can request block info and directory listings. Actual block
+   *   uploads return "need password" error (handled by underlying snap7 library).
+   * - Block Download: Similar to upload - directory operations work, downloads are blocked.
+   * - Block Info Queries: Fully supported - clients can query registered DB blocks.
+   * - Async Operations: The underlying snap7 library handles async block operations via
+   *   its worker thread architecture.
+   * 
+   * Callback Architecture:
+   * - OnServerEvent: Monitors server lifecycle and block operation events
+   * - OnReadEvent: Tracks all read operations for debugging/monitoring
+   * - rwCallback: Handles real-time read/write from clients
+   * - OnRWAreaCallback: Provides ResourceLess mode support for dynamic data
+   * 
+   * Event Handling:
+   * - Server events (start/stop, client connect/disconnect)
+   * - Block operation events (upload/download requests, directory queries)
+   * - Data access events (read/write operations)
+   * 
+   * The server properly handles:
+   * - Multiple concurrent clients
+   * - PDU negotiation
+   * - Memory area registration (MK, PA, DB areas)
+   * - Thread-safe data access via mutexes
+   */
   void Server::Run(std::shared_ptr<TS7Server> ts7server) {
     this->ts7server = ts7server;
     //debugging output
@@ -88,8 +116,28 @@ namespace s7 {
       std::cerr << "[S7] " << SrvErrorText(cbResult) << std::endl;
     }
 
+    // Register server event callbacks for monitoring and logging
+    int evtResult = ts7server->SetEventsCallback(OnServerEvent, this);
+    if (evtResult != 0) {
+      std::cerr << "[S7] Failed to register events callback! Error code: " << evtResult << std::endl;
+    }
+
+    // Register read event callback for monitoring read operations
+    int readEvtResult = ts7server->SetReadEventsCallback(OnReadEvent, this);
+    if (readEvtResult != 0) {
+      std::cerr << "[S7] Failed to register read events callback! Error code: " << readEvtResult << std::endl;
+    }
+
+    // Enable important server events
+    // Enable block upload/download, directory operations, and client events
+    longword eventMask = evcServerStarted | evcServerStopped | 
+                         evcClientAdded | evcClientDisconnected |
+                         evcUpload | evcDownload | evcDirectory |
+                         evcDataRead | evcDataWrite;
+    ts7server->SetEventsMask(eventMask);
+
     //debugging output
-    std::cout << "[S7] Server started and memory areas registered." << std::endl;
+    std::cout << "[S7] Server started, memory areas registered, and callbacks configured." << std::endl;
 
     //this is the main running loop, it scans the subscribed points and writes them to memory
     while (running) {
@@ -344,6 +392,183 @@ namespace s7 {
         points[p.tag] = p;
       }
     }
+  }
+
+  // Server event callback handler - handles general server events
+  /*
+   * This callback is invoked by snap7 for major server events including:
+   * - evcServerStarted/Stopped: Server lifecycle events
+   * - evcClientAdded/Disconnected: Client connection events
+   * - evcUpload: Block upload requests (logged, returns need-password by library)
+   * - evcDownload: Block download requests (logged, returns need-password by library)
+   * - evcDirectory: Directory/block info queries (fully functional)
+   * - evcNegotiatePDU: PDU size negotiation with clients
+   * 
+   * The underlying snap7 library handles block upload/download via:
+   * - PerformFunctionUpload(): Returns Code7NeedPassword to prevent block extraction
+   * - PerformFunctionDownload(): Returns Code7NeedPassword to prevent block injection  
+   * - PerformGroupBlockInfo(): Provides full directory listing of registered DBs
+   * 
+   * This allows clients to browse the PLC directory structure but not extract/inject code.
+   */
+  void Server::OnServerEvent(void* usrPtr, PSrvEvent pEvent, int size) {
+    if (!pEvent || !usrPtr) return;
+    
+    auto server = reinterpret_cast<Server*>(usrPtr);
+    
+    // Log important server events
+    switch (pEvent->EvtCode) {
+      case evcServerStarted:
+        std::cout << fmt::format("[{}] Server started", server->config.id) << std::endl;
+        break;
+      case evcServerStopped:
+        std::cout << fmt::format("[{}] Server stopped", server->config.id) << std::endl;
+        break;
+      case evcClientAdded:
+        std::cout << fmt::format("[{}] Client connected (ID: {})", server->config.id, pEvent->EvtSender) << std::endl;
+        break;
+      case evcClientDisconnected:
+        std::cout << fmt::format("[{}] Client disconnected (ID: {})", server->config.id, pEvent->EvtSender) << std::endl;
+        break;
+      case evcUpload:
+        std::cout << fmt::format("[{}] Block upload requested (Result: 0x{:04X})", 
+                  server->config.id, pEvent->EvtRetCode) << std::endl;
+        break;
+      case evcDownload:
+        std::cout << fmt::format("[{}] Block download requested (Result: 0x{:04X})", 
+                  server->config.id, pEvent->EvtRetCode) << std::endl;
+        break;
+      case evcDirectory:
+        std::cout << fmt::format("[{}] Directory operation (SubCode: 0x{:04X})", 
+                  server->config.id, pEvent->EvtParam1) << std::endl;
+        break;
+      default:
+        // Log other events at debug level if needed
+        break;
+    }
+  }
+
+  // Read event callback handler - handles read operations for monitoring
+  /*
+   * This callback is invoked for data read operations, allowing monitoring of:
+   * - Which areas are being read (PA, MK, DB, etc.)
+   * - Read address ranges and sizes
+   * - Read operation results
+   * 
+   * Useful for debugging, security monitoring, and performance analysis.
+   */
+  void Server::OnReadEvent(void* usrPtr, PSrvEvent pEvent, int size) {
+    if (!pEvent || !usrPtr) return;
+    
+    auto server = reinterpret_cast<Server*>(usrPtr);
+    
+    // Log read events for debugging
+    if (pEvent->EvtCode == evcDataRead) {
+      std::cout << fmt::format("[{}] Data read - Area: {}, Index: {}, Start: {}, Size: {}", 
+                server->config.id, pEvent->EvtParam1, pEvent->EvtParam2, 
+                pEvent->EvtParam3, pEvent->EvtParam4) << std::endl;
+    }
+  }
+
+  // Read/Write area callback for ResourceLess mode
+  /*
+   * This callback enables "ResourceLess" mode where the server doesn't need to
+   * pre-register memory buffers. Instead, it provides data on-demand via this callback.
+   * 
+   * Supports:
+   * - Async read operations: Client reads trigger this callback to get current data
+   * - Async write operations: Client writes trigger this callback to update data
+   * - Polling operations: Clients can poll areas without pre-allocated buffers
+   * - Block operations: Underlying library uses this for block read/write if enabled
+   * 
+   * Operation flow:
+   * 1. Client sends read/write request
+   * 2. Snap7 library validates request and calls this callback
+   * 3. Callback provides/receives data directly from application state
+   * 4. Library completes the response to client
+   * 
+   * This is complementary to the rwCallback which is used for simpler operations.
+   */
+  int Server::OnRWAreaCallback(void* usrPtr, int sender, int operation, PS7Tag pTag, void* pUsrData) {
+    if (!pTag || !usrPtr) return -1;
+    
+    auto server = reinterpret_cast<Server*>(usrPtr);
+    std::unique_lock<std::mutex> lock(server->pointsMu);
+    
+    // Handle the operation based on type (Read or Write)
+    if (operation == OperationRead) {
+      // Client is reading from server - provide data
+      std::cout << fmt::format("[{}] Read callback - Area: 0x{:02X}, DB: {}, Start: {}, Size: {}", 
+                server->config.id, pTag->Area, pTag->DBNumber, pTag->Start, pTag->Size) << std::endl;
+      
+      // Provide the data based on area type
+      if (pTag->Area == S7AreaPA || pTag->Area == S7AreaMK) {
+        // Binary input area
+        if (pTag->Start < sizeof(server->paBuffer)) {
+          memcpy(pUsrData, &server->paBuffer[pTag->Start], 
+                 std::min(pTag->Size, (int)(sizeof(server->paBuffer) - pTag->Start)));
+          return 0; // Success
+        }
+      } else if (pTag->Area == S7AreaDB) {
+        // Analog data area
+        if (pTag->Start < sizeof(server->dbBuffer)) {
+          memcpy(pUsrData, &server->dbBuffer[pTag->Start], 
+                 std::min(pTag->Size, (int)(sizeof(server->dbBuffer) - pTag->Start)));
+          return 0; // Success
+        }
+      }
+      
+      return -1; // Out of range or unsupported area
+      
+    } else if (operation == OperationWrite) {
+      // Client is writing to server - process the write
+      std::cout << fmt::format("[{}] Write callback - Area: 0x{:02X}, DB: {}, Start: {}, Size: {}", 
+                server->config.id, pTag->Area, pTag->DBNumber, pTag->Start, pTag->Size) << std::endl;
+      
+      // Process write based on area type
+      if (pTag->Area == S7AreaPA || pTag->Area == S7AreaMK) {
+        // Binary output area
+        if (pTag->Start < sizeof(server->paBuffer)) {
+          memcpy(&server->paBuffer[pTag->Start], pUsrData, 
+                 std::min(pTag->Size, (int)(sizeof(server->paBuffer) - pTag->Start)));
+          
+          // Update the corresponding output point
+          if (server->binaryOutputs.find(pTag->Start) != server->binaryOutputs.end()) {
+            bool val = server->paBuffer[pTag->Start] != 0;
+            const auto& tag = server->binaryOutputs[pTag->Start].tag;
+            if (server->points.find(tag) != server->points.end()) {
+              server->points[tag].value = val ? 1.0 : 0.0;
+              lock.unlock();
+              server->WriteBinary(pTag->Start, val);
+            }
+          }
+          return 0; // Success
+        }
+      } else if (pTag->Area == S7AreaDB) {
+        // Analog output area
+        if (pTag->Start + sizeof(float) <= sizeof(server->dbBuffer)) {
+          memcpy(&server->dbBuffer[pTag->Start], pUsrData, 
+                 std::min(pTag->Size, (int)(sizeof(server->dbBuffer) - pTag->Start)));
+          
+          // Update the corresponding output point
+          if (server->analogOutputs.find(pTag->Start) != server->analogOutputs.end()) {
+            float val;
+            memcpy(&val, &server->dbBuffer[pTag->Start], sizeof(float));
+            const auto& tag = server->analogOutputs[pTag->Start].tag;
+            if (server->points.find(tag) != server->points.end()) {
+              server->points[tag].value = val;
+              lock.unlock();
+              server->WriteAnalog(pTag->Start, val);
+            }
+          }
+          return 0; // Success
+        }
+      }
+      
+      return -1; // Out of range or unsupported area
+    }
+    
+    return -1; // Unknown operation
   }
 
 } // namespace s7

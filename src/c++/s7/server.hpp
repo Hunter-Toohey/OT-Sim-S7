@@ -49,6 +49,13 @@ public:
     void HandleMsgBusStatus(const otsim::msgbus::Envelope<otsim::msgbus::Status>& env);
 
     static void OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr);
+    
+    // Event callback handlers for server events
+    static void OnServerEvent(void* usrPtr, PSrvEvent pEvent, int size);
+    static void OnReadEvent(void* usrPtr, PSrvEvent pEvent, int size);
+    
+    // Read/Write area callback for ResourceLess mode support
+    static int OnRWAreaCallback(void* usrPtr, int sender, int operation, PS7Tag pTag, void* pUsrData);
 
 private:
     ServerConfig config;

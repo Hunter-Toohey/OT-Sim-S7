@@ -952,6 +952,19 @@ TextString SrvErrorText(int Error);
 TextString ParErrorText(int Error);
 TextString SrvEventText(TSrvEvent *Event);
 
-
 #endif // __cplusplus
+
+// C-compatible text functions for error reporting
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Text helper functions
+const char* S7API Srv_ErrorTextC(int Error, char *Text, int TextLen);
+const char* S7API Cli_ErrorTextC(int Error, char *Text, int TextLen);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif // snap7_h
