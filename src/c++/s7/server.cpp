@@ -157,6 +157,13 @@ namespace s7 {
     while (running) {
       std::unique_lock<std::mutex> lock(pointsMu);
 
+      // --- TEST PATCH: write MB0..MB15 non-zero values ---
+      for (int i = 0; i < 16; ++i) {
+          paBuffer[i] = static_cast<byte>(i + 1);  // MB0=1, MB1=2, ..., MB15=16
+          std::cout << fmt::format("[{}] test write MB{} = {}", config.id, i, paBuffer[i]) << std::endl;
+      }
+      // ------------------------------------------------------
+
       //write binary inputs S7 memory
       for (auto& kv : binaryInputs) {
         const auto& addr = kv.first;
