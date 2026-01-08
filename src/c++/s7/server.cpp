@@ -504,14 +504,14 @@ namespace s7 {
       // Provide the data based on area type
       if (pTag->Area == S7AreaPA || pTag->Area == S7AreaMK) {
         // Binary input area
-        if (pTag->Start < sizeof(server->paBuffer)) {
+        if (pTag->Start < (int)sizeof(server->paBuffer)) {
           memcpy(pUsrData, &server->paBuffer[pTag->Start], 
                  std::min(pTag->Size, (int)(sizeof(server->paBuffer) - pTag->Start)));
           return 0; // Success
         }
       } else if (pTag->Area == S7AreaDB) {
         // Analog data area
-        if (pTag->Start < sizeof(server->dbBuffer)) {
+        if (pTag->Start < (int)sizeof(server->dbBuffer)) {
           memcpy(pUsrData, &server->dbBuffer[pTag->Start], 
                  std::min(pTag->Size, (int)(sizeof(server->dbBuffer) - pTag->Start)));
           return 0; // Success
@@ -528,7 +528,7 @@ namespace s7 {
       // Process write based on area type
       if (pTag->Area == S7AreaPA || pTag->Area == S7AreaMK) {
         // Binary output area
-        if (pTag->Start < sizeof(server->paBuffer)) {
+        if (pTag->Start < (int)sizeof(server->paBuffer)) {
           memcpy(&server->paBuffer[pTag->Start], pUsrData, 
                  std::min(pTag->Size, (int)(sizeof(server->paBuffer) - pTag->Start)));
           
@@ -546,7 +546,7 @@ namespace s7 {
         }
       } else if (pTag->Area == S7AreaDB) {
         // Analog output area
-        if (pTag->Start + sizeof(float) <= sizeof(server->dbBuffer)) {
+        if (pTag->Start + (int)sizeof(float) <= (int)sizeof(server->dbBuffer)) {
           memcpy(&server->dbBuffer[pTag->Start], pUsrData, 
                  std::min(pTag->Size, (int)(sizeof(server->dbBuffer) - pTag->Start)));
           
