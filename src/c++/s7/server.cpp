@@ -195,11 +195,10 @@ namespace s7 {
       PEvent->EvtRetCode = evrNotImplemented;
     }
   }
-    auto server = reinterpret_cast<Server*>(usrPtr);
-    std::unique_lock<std::mutex> lock(server->pointsMu);
 
-    //access the registered buffers
-    if (area == srvAreaMK) {
+  //when a client writes into server memory this function updates the message bus
+  void Server::OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr) {
+    if (area == srvAreaPA) {
       if (static_cast<size_t>(start) < sizeof(server->paBuffer)) {
         bool val = server->paBuffer[start] != 0;
         if (server->binaryOutputs.find(start) == server->binaryOutputs.end()) {
