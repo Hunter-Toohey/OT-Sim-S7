@@ -68,8 +68,18 @@ private:
 
     std::atomic<bool> running{false};
     
-    byte paBuffer[256] = {0};
+    byte paBuffer[256] = {0};  // Merker (MB)
+    byte ebBuffer[256] = {0};  // Process Inputs (EB)
+    byte abBuffer[256] = {0};  // Process Outputs (AB)
+    byte tBuffer[256] = {0};   // Timers (T)
+    byte zBuffer[256] = {0};   // Counters (Z)
     byte dbBuffer[1024] = {0};
+
+    // Counters for assigning sequential addresses
+    size_t nextBinInAddr = 0;
+    size_t nextBinOutAddr = 0;
+    size_t nextAnaInAddr = 0;
+    size_t nextAnaOutAddr = 0;
 };
 
 } // namespace s7

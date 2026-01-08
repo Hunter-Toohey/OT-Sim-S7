@@ -16,6 +16,8 @@ namespace s7 {
     else if (area == S7AreaDB) area = srvAreaDB;
     else if (area == S7AreaPE) area = srvAreaPE;
     else if (area == S7AreaPA) area = srvAreaPA;
+    else if (area == S7AreaTM) area = srvAreaTM;
+    else if (area == S7AreaCT) area = srvAreaCT;
 
     Server::OnClientWrite(area, PTag->DBNumber, PTag->Start, PTag->Size, usrPtr);
 
@@ -76,6 +78,30 @@ namespace s7 {
       std::cerr << "[S7] " << SrvErrorText(mkResult) << std::endl;
       return;
     }
+    int peResult = ts7server->RegisterArea(srvAreaPE, 0, ebBuffer, sizeof(ebBuffer));
+    if (peResult != 0) {
+      std::cerr << "[S7] Failed to register PE area! Error code: " << peResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(peResult) << std::endl;
+      return;
+    }
+    int paResult = ts7server->RegisterArea(srvAreaPA, 0, abBuffer, sizeof(abBuffer));
+    if (paResult != 0) {
+      std::cerr << "[S7] Failed to register PA area! Error code: " << paResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(paResult) << std::endl;
+      return;
+    }
+    int tmResult = ts7server->RegisterArea(srvAreaTM, 0, tBuffer, sizeof(tBuffer));
+    if (tmResult != 0) {
+      std::cerr << "[S7] Failed to register TM area! Error code: " << tmResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(tmResult) << std::endl;
+      return;
+    }
+    int ctResult = ts7server->RegisterArea(srvAreaCT, 0, zBuffer, sizeof(zBuffer));
+    if (ctResult != 0) {
+      std::cerr << "[S7] Failed to register CT area! Error code: " << ctResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(ctResult) << std::endl;
+      return;
+    }
     int dbResult = ts7server->RegisterArea(srvAreaDB, 1, dbBuffer, sizeof(dbBuffer));
     if (dbResult != 0) {
       std::cerr << "[S7] Failed to register DB area! Error code: " << dbResult << std::endl;
@@ -91,6 +117,15 @@ namespace s7 {
     //debugging output
     std::cout << "[S7] Server started and memory areas registered." << std::endl;
 
+    // Initialize first 16 bytes of each buffer with test values
+    for (int i = 0; i < 16; ++i) {
+      paBuffer[i] = static_cast<byte>(i + 1);  // MB0..MB15: 1,2,3,...,16
+      ebBuffer[i] = static_cast<byte>(i + 17); // EB0..EB15: 17,18,19,...,32
+      abBuffer[i] = static_cast<byte>(i + 33); // AB0..AB15: 33,34,35,...,48
+      tBuffer[i] = static_cast<byte>(i + 49);  // T0..T15: 49,50,51,...,64
+      zBuffer[i] = static_cast<byte>(i + 65);  // Z0..Z15: 65,66,67,...,80
+    }
+
     //this is the main running loop, it scans the subscribed points and writes them to memory
     while (running) {
       std::unique_lock<std::mutex> lock(pointsMu);
@@ -104,6 +139,7 @@ namespace s7 {
         }
         auto& point = points[kv.second.tag];
         WriteBinaryToS7(paBuffer, sizeof(this->paBuffer), addr, point.value != 0);
+        WriteBinaryToS7(ebBuffer, sizeof(this->ebBuffer), addr, point.value != 0);
         //log that we updated an input
         std::cout << fmt::format("[{}] updated binary input {} to {}", config.id, addr, point.value) << std::endl;
         metrics->IncrMetric("s7_binary_write_count");
@@ -117,7 +153,7 @@ namespace s7 {
           continue;
         }
         auto& point = points[kv.second.tag];
-        WriteBinaryToS7(dbBuffer, sizeof(this->dbBuffer), addr, point.value != 0);
+        WriteBinaryToS7(abBuffer, sizeof(this->abBuffer), addr, point.value != 0);
         std::cout << fmt::format("[{}] updated binary output {} to {}", config.id, addr, point.value) << std::endl;
         WriteBinary(addr, point.value != 0);
         metrics->IncrMetric("s7_binary_write_count");
@@ -178,6 +214,37 @@ namespace s7 {
       } else {
         std::cerr << "[S7] OnClientWrite MK out of bounds: start=" << start << std::endl;
       }
+    } else if (area == srvAreaPE) {
+      if (static_cast<size_t>(start) < sizeof(server->ebBuffer)) {
+        bool val = server->ebBuffer[start] != 0;
+        // For PE, perhaps map to binaryInputs or something, but for now, maybe not handle
+        std::cerr << "[S7] OnClientWrite PE not implemented" << std::endl;
+      } else {
+        std::cerr << "[S7] OnClientWrite PE out of bounds: start=" << start << std::endl;
+      }
+    } else if (area == srvAreaPA) {
+      if (static_cast<size_t>(start) < sizeof(server->abBuffer)) {
+        bool val = server->abBuffer[start] != 0;
+        if (server->binaryOutputs.find(start) == server->binaryOutputs.end()) {
+          std::cerr << "[S7] OnClientWrite: binaryOutputs not found for start=" << start << std::endl;
+          return;
+        }
+        const auto& tag = server->binaryOutputs[start].tag;
+        if (server->points.find(tag) == server->points.end()) {
+          std::cerr << "[S7] OnClientWrite: points not found for tag=" << tag << std::endl;
+          return;
+        }
+        server->points[tag].value = val ? 1.0 : 0.0;
+        server->WriteBinary(start, val);
+      } else {
+        std::cerr << "[S7] OnClientWrite PA out of bounds: start=" << start << std::endl;
+      }
+    } else if (area == srvAreaTM) {
+      // Timers, special handling
+      std::cerr << "[S7] OnClientWrite TM not implemented" << std::endl;
+    } else if (area == srvAreaCT) {
+      // Counters, special handling
+      std::cerr << "[S7] OnClientWrite CT not implemented" << std::endl;
     } else if (area == srvAreaDB) {
       if (static_cast<size_t>(start) + sizeof(float) <= sizeof(server->dbBuffer)) {
         float val;
@@ -206,8 +273,9 @@ namespace s7 {
     * point being passed in, set the value equal to the incoming point. Then
     * create a msgbus Point structure and store it in the list of points
     */
-    binaryInputs[point.address] = point;
+    binaryInputs[nextBinInAddr] = point;
     points[point.tag] = otsim::msgbus::Point{point.tag, 0.0, 0};
+    nextBinInAddr++;
 
     return true; //assuming this doesn't fail, return true
   }
@@ -216,8 +284,9 @@ namespace s7 {
     point.output = true;
 
     //store the point and point tag into the binaryOutputs and points arrays respectively
-    binaryOutputs[point.address] = point;
+    binaryOutputs[nextBinOutAddr] = point;
     points[point.tag] = otsim::msgbus::Point{point.tag, 0.0, 0};
+    nextBinOutAddr++;
 
     return true; 
   }
@@ -225,8 +294,9 @@ namespace s7 {
   bool Server::AddAnalogInput(AnalogInputPoint point) {
 
     //store the point and point tag into the analogInputs and points arrays respectively
-    analogInputs[point.address] = point;
+    analogInputs[nextAnaInAddr] = point;
     points[point.tag] = otsim::msgbus::Point{point.tag, 0.0, 0};
+    nextAnaInAddr += sizeof(float);
 
     return true;
   }
@@ -235,8 +305,9 @@ namespace s7 {
     point.output = true;
 
     //store the point and point tag into the analogOutputs and points arrays respectively
-    analogOutputs[point.address] = point;
+    analogOutputs[nextAnaOutAddr] = point;
     points[point.tag] = otsim::msgbus::Point{point.tag, 0.0, 0};
+    nextAnaOutAddr += sizeof(float);
 
     return true;
   }
