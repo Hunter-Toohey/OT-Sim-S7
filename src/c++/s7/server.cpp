@@ -106,6 +106,11 @@ namespace s7 {
       std::cerr << "[S7] " << SrvErrorText(evtResult) << std::endl;
     }
 
+    // Enable upload events in the events mask
+    longword currentMask = ts7server->GetEventsMask();
+    longword newMask = currentMask | evcUpload;  // Enable the upload event bit
+    ts7server->SetEventsMask(newMask);
+
     //debugging output
     std::cout << "[S7] Server started and memory areas registered." << std::endl;
 
@@ -182,12 +187,24 @@ namespace s7 {
     
     // Handle block upload events
     if (PEvent->EvtCode == evcUpload) {
-      std::cout << fmt::format("[{}] Block upload requested - Type: {}, Number: {} - NOT SUPPORTED", 
+      std::cout << fmt::format("[{}] Block upload requested - Type: {}, Number: {}", 
                               server->config.id, PEvent->EvtParam1, PEvent->EvtParam2) << std::endl;
       
-      // This server is designed for data exchange, not PLC programming
-      // Return "not implemented" to indicate the operation is not supported
-      PEvent->EvtRetCode = evrNotImplemented;
+      // Check if we have this block
+      std::unique_lock<std::mutex> lock(server->blocksMu);
+      auto blockKey = std::make_pair(static_cast<byte>(PEvent->EvtParam1), static_cast<int>(PEvent->EvtParam2));
+      auto it = server->blocks.find(blockKey);
+      
+      if (it != server->blocks.end()) {
+        std::cout << fmt::format("[{}] Providing sample block data ({} bytes)", server->config.id, it->second.size()) << std::endl;
+        // For now, just allow the upload to proceed with sample data
+        PEvent->EvtRetCode = 0; // Success
+      } else {
+        std::cout << fmt::format("[{}] Block not found - rejecting upload", server->config.id) << std::endl;
+        PEvent->EvtRetCode = evrCannotUpload;
+      }
+    } else {
+      std::cout << fmt::format("[{}] Unhandled event code: 0x{:08X}", server->config.id, PEvent->EvtCode) << std::endl;
     }
   }
 
