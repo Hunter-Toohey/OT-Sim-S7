@@ -198,7 +198,7 @@ namespace s7 {
         }
         auto& point = points[kv.second.tag];
         WriteAnalogToS7(dbBuffer, sizeof(this->dbBuffer), addr, static_cast<float>(point.value));
-        std::cout << fmt::format("[{}] updated analog input {} to {}", config.id, addr, point.value) << std::endl;
+        std::cout << fmt::format("[{}] updated____analog input {} to {}", config.id, addr, point.value) << std::endl;
         metrics->IncrMetric("s7_analog_write_count");
       }
 
