@@ -68,12 +68,8 @@ namespace s7 {
 
     // Initialize first 16 bytes of each buffer with test values
     for (int i = 0; i < 16; ++i) {
-      paBuffer[i] = static_cast<byte>(i + 1);  // MB0..MB15: 1,2,3,...,16
-      ebBuffer[i] = static_cast<byte>(i + 17); // EB0..EB15: 17,18,19,...,32
-      abBuffer[i] = static_cast<byte>(i + 33); // AB0..AB15: 33,34,35,...,48
       tBuffer[i] = static_cast<byte>(i + 49);  // T0..T15: 49,50,51,...,64
       zBuffer[i] = static_cast<byte>(i + 65);  // Z0..Z15: 65,66,67,...,80
-      dbBuffer[i] = static_cast<byte>(i + 1);  // Also DB1 0..15 for MB if needed
     }
     std::cout << "[S7] Buffers initialized with test values." << std::endl;
 
@@ -304,7 +300,7 @@ namespace s7 {
     * create a msgbus Point structure and store it in the list of points
     */
     binaryInputs[nextBinInAddr] = point;
-    points[point.tag] = otsim::msgbus::Point{point.tag, 0.0, 0};
+    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};  // Initialize to 1.0 for non-zero
     nextBinInAddr++;
 
     return true; //assuming this doesn't fail, return true
@@ -315,17 +311,12 @@ namespace s7 {
 
     //store the point and point tag into the binaryOutputs and points arrays respectively
     binaryOutputs[nextBinOutAddr] = point;
-    points[point.tag] = otsim::msgbus::Point{point.tag, 0.0, 0};
-    nextBinOutAddr++;
-
-    return true; 
-  }
-
+    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};  // Initialize to 1.0 for non-zero
   bool Server::AddAnalogInput(AnalogInputPoint point) {
 
     //store the point and point tag into the analogInputs and points arrays respectively
     analogInputs[nextAnaInAddr] = point;
-    points[point.tag] = otsim::msgbus::Point{point.tag, 0.0, 0};
+    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};  // Initialize to 1.0 for non-zero
     nextAnaInAddr += sizeof(float);
 
     return true;
@@ -336,7 +327,7 @@ namespace s7 {
 
     //store the point and point tag into the analogOutputs and points arrays respectively
     analogOutputs[nextAnaOutAddr] = point;
-    points[point.tag] = otsim::msgbus::Point{point.tag, 0.0, 0};
+    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};  // Initialize to 1.0 for non-zero
     nextAnaOutAddr += sizeof(float);
 
     return true;
