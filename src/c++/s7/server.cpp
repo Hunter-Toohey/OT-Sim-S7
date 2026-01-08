@@ -164,6 +164,9 @@ namespace s7 {
         if ((i + 1) % 16 == 0) bufferHex += "\n                ";
       }
       std::cout << fmt::format("[{}] PA Buffer: {}", config.id, bufferHex) << std::endl;
+    
+      // Debug: Show registered area information
+      std::cout << fmt::format("[{}] Registered as S7 area code: srvAreaPA ({})", config.id, srvAreaPA) << std::endl;
 
       //write binary outputs to S7 memory
       for (auto& kv : binaryOutputs) {
@@ -186,6 +189,9 @@ namespace s7 {
         if ((i + 1) % 16 == 0) dbBufferHex += "\n                ";
       }
       std::cout << fmt::format("[{}] DB Buffer: {}", config.id, dbBufferHex) << std::endl;
+      
+      // Debug: Show registered area information
+      std::cout << fmt::format("[{}] Registered as S7 area code: srvAreaDB ({})", config.id, srvAreaDB) << std::endl;
 
       //write analog inputs to S7 memory
       for (auto& kv : analogInputs) {
