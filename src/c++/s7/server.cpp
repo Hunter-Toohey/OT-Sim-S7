@@ -1,12 +1,16 @@
 #include <iostream>
 #include <cstring>
+#include <cstdint>
 #include "server.hpp"
 #include "fmt/format.h"
 #include "msgbus/metrics.hpp"
 #include "snap7.h"
 
-// Declare the missing method if it exists in the library
-extern "C" int Srv_SetCpuProtectionLevel(S7Object Server, int level);
+// Define byte type for Snap7 compatibility
+using byte = std::uint8_t;
+
+// Fix Srv_SetCpuProtectionLevel declaration to use TS7Server*
+extern "C" int Srv_SetCpuProtectionLevel(TS7Server* Server, int level);
 
 namespace otsim {
 namespace s7 {
@@ -20,7 +24,8 @@ namespace s7 {
     else if (area == S7AreaPE) area = srvAreaPE;
     else if (area == S7AreaPA) area = srvAreaPA;
 
-    Server::OnClientWrite(area, PTag->DBNumber, PTag->Start, PTag->Size, usrPtr);
+    auto server = reinterpret_cast<Server*>(usrPtr);
+    server->OnClientWrite(area, PTag->DBNumber, PTag->Start, PTag->Size, pUsrData);
 
     return 0;
   }
@@ -84,7 +89,7 @@ namespace s7 {
     }
 
     // Try to disable CPU protection using declared Snap7 API after starting
-    int protResult = Srv_SetCpuProtectionLevel(ts7server->Server, 0);  // 0 = No protection
+    int protResult = Srv_SetCpuProtectionLevel(ts7server.get(), 0);  // 0 = No protection
     if (protResult != 0) {
       std::cout << "[S7] Note: Could not set protection level (this may be normal)" << std::endl;
     }
@@ -117,8 +122,8 @@ namespace s7 {
     }
 
     // Enable upload events in the events mask
-    longword currentMask = ts7server->GetEventsMask();
-    longword newMask = currentMask | evcUpload;  // Enable the upload event bit
+    uint32_t currentMask = ts7server->GetEventsMask();
+    uint32_t newMask = currentMask | evcUpload;  // Enable the upload event bit
     ts7server->SetEventsMask(newMask);
 
     //debugging output
