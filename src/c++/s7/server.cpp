@@ -174,7 +174,20 @@ namespace s7 {
         }
         auto& point = points[kv.second.tag];
         WriteBinaryToS7(dbBuffer, sizeof(this->dbBuffer), addr, point.value != 0);
-        std::cout << fmt::format("[{}] updated binary output {} to {}", config.id, addr, point.value) << std::endl;
+        
+        // Debug: Show actual memory at the updated address
+        std::string memHex;
+        int startIdx = std::max(0, (int)addr - 4);
+        int endIdx = std::min((int)sizeof(dbBuffer), (int)addr + 5);
+        for (int i = startIdx; i < endIdx; i++) {
+          if (i == (int)addr) memHex += "[";
+          memHex += fmt::format("{:02X}", dbBuffer[i]);
+          if (i == (int)addr) memHex += "]";
+          memHex += " ";
+        }
+        
+        std::cout << fmt::format("[{}] updated binary output {} to {} | DB memory: {}", 
+                  config.id, addr, point.value, memHex) << std::endl;
         WriteBinary(addr, point.value != 0);
         metrics->IncrMetric("s7_binary_write_count");
       }
