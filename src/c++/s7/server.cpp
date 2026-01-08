@@ -19,7 +19,8 @@ namespace s7 {
     else if (area == S7AreaTM) area = srvAreaTM;
     else if (area == S7AreaCT) area = srvAreaCT;
 
-    Server::OnClientWrite(area, PTag->DBNumber, PTag->Start, PTag->Size, usrPtr);
+    auto server = reinterpret_cast<Server*>(usrPtr);
+    server->OnClientWrite(area, PTag->DBNumber, PTag->Start, PTag->Size);
 
     return 0;
   }
@@ -143,7 +144,7 @@ namespace s7 {
       std::cerr << "[S7] " << SrvErrorText(cbResult) << std::endl;
     }
 
-    //start server before registering areas, otherwise we segfault
+    //start server after registering areas
     if (ts7server->Start() != 0) {
         std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
         return;
@@ -218,50 +219,49 @@ namespace s7 {
   }
 
   //when a client writes into server memory this function updates the message bus
-  void Server::OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr) {
-    auto server = reinterpret_cast<Server*>(usrPtr);
-    std::unique_lock<std::mutex> lock(server->pointsMu);
+  void Server::OnClientWrite(int area, int dbNumber, int start, int size) {
+    std::unique_lock<std::mutex> lock(pointsMu);
 
     //access the registered buffers
     if (area == srvAreaMK) {
-      if (static_cast<size_t>(start) < sizeof(server->paBuffer)) {
-        bool val = server->paBuffer[start] != 0;
-        if (server->binaryOutputs.find(start) == server->binaryOutputs.end()) {
+      if (static_cast<size_t>(start) < sizeof(paBuffer)) {
+        bool val = paBuffer[start] != 0;
+        if (binaryOutputs.find(start) == binaryOutputs.end()) {
           std::cerr << "[S7] OnClientWrite: binaryOutputs not found for start=" << start << std::endl;
           return;
         }
-        const auto& tag = server->binaryOutputs[start].tag;
-        if (server->points.find(tag) == server->points.end()) {
+        const auto& tag = binaryOutputs[start].tag;
+        if (points.find(tag) == points.end()) {
           std::cerr << "[S7] OnClientWrite: points not found for tag=" << tag << std::endl;
           return;
         }
-        server->points[tag].value = val ? 1.0 : 0.0;
-        server->WriteBinary(start, val);
+        points[tag].value = val ? 1.0 : 0.0;
+        WriteBinary(start, val);
       } else {
         std::cerr << "[S7] OnClientWrite MK out of bounds: start=" << start << std::endl;
       }
     } else if (area == srvAreaPE) {
-      if (static_cast<size_t>(start) < sizeof(server->ebBuffer)) {
-        bool val = server->ebBuffer[start] != 0;
+      if (static_cast<size_t>(start) < sizeof(ebBuffer)) {
+        bool val = ebBuffer[start] != 0;
         // For PE, perhaps map to binaryInputs or something, but for now, maybe not handle
         std::cerr << "[S7] OnClientWrite PE not implemented" << std::endl;
       } else {
         std::cerr << "[S7] OnClientWrite PE out of bounds: start=" << start << std::endl;
       }
     } else if (area == srvAreaPA) {
-      if (static_cast<size_t>(start) < sizeof(server->abBuffer)) {
-        bool val = server->abBuffer[start] != 0;
-        if (server->binaryOutputs.find(start) == server->binaryOutputs.end()) {
+      if (static_cast<size_t>(start) < sizeof(abBuffer)) {
+        bool val = abBuffer[start] != 0;
+        if (binaryOutputs.find(start) == binaryOutputs.end()) {
           std::cerr << "[S7] OnClientWrite: binaryOutputs not found for start=" << start << std::endl;
           return;
         }
-        const auto& tag = server->binaryOutputs[start].tag;
-        if (server->points.find(tag) == server->points.end()) {
+        const auto& tag = binaryOutputs[start].tag;
+        if (points.find(tag) == points.end()) {
           std::cerr << "[S7] OnClientWrite: points not found for tag=" << tag << std::endl;
           return;
         }
-        server->points[tag].value = val ? 1.0 : 0.0;
-        server->WriteBinary(start, val);
+        points[tag].value = val ? 1.0 : 0.0;
+        WriteBinary(start, val);
       } else {
         std::cerr << "[S7] OnClientWrite PA out of bounds: start=" << start << std::endl;
       }
@@ -272,20 +272,20 @@ namespace s7 {
       // Counters, special handling
       std::cerr << "[S7] OnClientWrite CT not implemented" << std::endl;
     } else if (area == srvAreaDB) {
-      if (static_cast<size_t>(start) + sizeof(float) <= sizeof(server->dbBuffer)) {
+      if (static_cast<size_t>(start) + sizeof(float) <= sizeof(dbBuffer)) {
         float val;
-        memcpy(&val, &server->dbBuffer[start], sizeof(float));
-        if (server->analogOutputs.find(start) == server->analogOutputs.end()) {
+        memcpy(&val, &dbBuffer[start], sizeof(float));
+        if (analogOutputs.find(start) == analogOutputs.end()) {
           std::cerr << "[S7] OnClientWrite: analogOutputs not found for start=" << start << std::endl;
           return;
         }
-        const auto& tag = server->analogOutputs[start].tag;
-        if (server->points.find(tag) == server->points.end()) {
+        const auto& tag = analogOutputs[start].tag;
+        if (points.find(tag) == points.end()) {
           std::cerr << "[S7] OnClientWrite: points not found for tag=" << tag << std::endl;
           return;
         }
-        server->points[tag].value = val;
-        server->WriteAnalog(start, val);
+        points[tag].value = val;
+        WriteAnalog(start, val);
       } else {
         std::cerr << "[S7] OnClientWrite DB out of bounds: start=" << start << std::endl;
       }
@@ -294,40 +294,50 @@ namespace s7 {
 
 
   bool Server::AddBinaryInput(BinaryInputPoint point) {
-    /*
-    * in our binary inputs array, at the position equal to the address of the 
-    * point being passed in, set the value equal to the incoming point. Then
-    * create a msgbus Point structure and store it in the list of points
-    */
+    if (nextBinInAddr >= sizeof(paBuffer)) {
+      std::cerr << "[S7] AddBinaryInput: buffer full" << std::endl;
+      return false;
+    }
     binaryInputs[nextBinInAddr] = point;
-    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};  // Initialize to 1.0 for non-zero
+    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};
     nextBinInAddr++;
 
-    return true; //assuming this doesn't fail, return true
+    return true;
   }
 
   bool Server::AddBinaryOutput(BinaryOutputPoint point) {
+    if (nextBinOutAddr >= sizeof(abBuffer)) {
+      std::cerr << "[S7] AddBinaryOutput: buffer full" << std::endl;
+      return false;
+    }
     point.output = true;
-
-    //store the point and point tag into the binaryOutputs and points arrays respectively
     binaryOutputs[nextBinOutAddr] = point;
-    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};  // Initialize to 1.0 for non-zero
-  bool Server::AddAnalogInput(AnalogInputPoint point) {
+    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};
+    nextBinOutAddr++;
 
-    //store the point and point tag into the analogInputs and points arrays respectively
+    return true;
+  }
+
+  bool Server::AddAnalogInput(AnalogInputPoint point) {
+    if (nextAnaInAddr + sizeof(float) > sizeof(dbBuffer)) {
+      std::cerr << "[S7] AddAnalogInput: buffer full" << std::endl;
+      return false;
+    }
     analogInputs[nextAnaInAddr] = point;
-    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};  // Initialize to 1.0 for non-zero
+    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};
     nextAnaInAddr += sizeof(float);
 
     return true;
   }
 
   bool Server::AddAnalogOutput(AnalogOutputPoint point) {
+    if (nextAnaOutAddr + sizeof(float) > sizeof(dbBuffer)) {
+      std::cerr << "[S7] AddAnalogOutput: buffer full" << std::endl;
+      return false;
+    }
     point.output = true;
-
-    //store the point and point tag into the analogOutputs and points arrays respectively
     analogOutputs[nextAnaOutAddr] = point;
-    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};  // Initialize to 1.0 for non-zero
+    points[point.tag] = otsim::msgbus::Point{point.tag, 1.0, 0};
     nextAnaOutAddr += sizeof(float);
 
     return true;
@@ -335,6 +345,7 @@ namespace s7 {
 
   //this function interacts with the message bus to store status information for tags so other modules can access it (binary)
   void Server::WriteBinary(std::uint16_t address, bool status) {
+    if (!pusher) return;
     auto iter = binaryOutputs.find(address);
     if (iter == binaryOutputs.end()) {
       return;
@@ -349,11 +360,12 @@ namespace s7 {
     auto env = otsim::msgbus::NewEnvelope(config.id, contents);
 
     pusher->Push("RUNTIME", env);
-    metrics->IncrMetric("update_count");
+    if (metrics) metrics->IncrMetric("update_count");
   }
 
   //this function interacts with the message bus to store status information for tags so other modules can access it (analog)
   void Server::WriteAnalog(std::uint16_t address, double value) {
+    if (!pusher) return;
     auto iter = analogOutputs.find(address);
     if (iter == analogOutputs.end()) {
       return;
@@ -368,7 +380,7 @@ namespace s7 {
     auto env = otsim::msgbus::NewEnvelope(config.id, contents);
 
     pusher->Push("RUNTIME", env);
-    metrics->IncrMetric("update_count");
+    if (metrics) metrics->IncrMetric("update_count");
   }
 
   const BinaryOutputPoint* Server::GetBinaryOutput(const uint16_t address) {

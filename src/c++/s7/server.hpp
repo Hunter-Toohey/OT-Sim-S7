@@ -48,7 +48,7 @@ public:
     void ResetOutputs();
     void HandleMsgBusStatus(const otsim::msgbus::Envelope<otsim::msgbus::Status>& env);
 
-    static void OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr);
+    void OnClientWrite(int area, int dbNumber, int start, int size);
 
 private:
     ServerConfig config;
