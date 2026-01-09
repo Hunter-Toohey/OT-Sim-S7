@@ -97,13 +97,9 @@ namespace s7 {
         return;
     }
     
-    // Clear password protection to allow block operations
-    ts7server->ClearSessionPassword();
-    std::cout << "[S7] Password protection cleared for block operations" << std::endl;
-    
-    // Set CPU to RUN status to allow full operations
+    // Set CPU to RUN status to allow block operations
     ts7server->SetCpuStatus(S7CpuStatusRun);
-    std::cout << "[S7] CPU status set to RUN" << std::endl;
+    std::cout << "[S7] CPU status set to RUN (block operations enabled)" << std::endl;
     //register memory buffers for PE, PA, MK, and DB areas matching real PLC architecture
     //PE = Process Inputs (PIB: digital inputs + PIW: analog inputs)
     //PA = Process Outputs (PQB: digital outputs + PQW: analog outputs)
