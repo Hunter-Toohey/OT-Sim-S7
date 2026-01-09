@@ -96,9 +96,10 @@ namespace s7 {
         std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
         return;
     }
-    //register memory buffers for PE, PA, and DB areas matching real PLC architecture
+    //register memory buffers for PE, PA, MK, and DB areas matching real PLC architecture
     //PE = Process Inputs (PIB: digital inputs + PIW: analog inputs)
     //PA = Process Outputs (PQB: digital outputs + PQW: analog outputs)
+    //MK = Merker (internal flags/markers for intermediate calculations)
     //DB = Data Blocks (structured data, recipes, parameters - NOT for I/O)
     int peResult = ts7server->RegisterArea(srvAreaPE, 0, peBuffer, sizeof(peBuffer));
     if (peResult != 0) {
@@ -110,6 +111,12 @@ namespace s7 {
     if (paResult != 0) {
       std::cerr << "[S7] Failed to register PA area! Error code: " << paResult << std::endl;
       std::cerr << "[S7] " << SrvErrorText(paResult) << std::endl;
+      return;
+    }
+    int mkResult = ts7server->RegisterArea(srvAreaMK, 0, mkBuffer, sizeof(mkBuffer));
+    if (mkResult != 0) {
+      std::cerr << "[S7] Failed to register MK area! Error code: " << mkResult << std::endl;
+      std::cerr << "[S7] " << SrvErrorText(mkResult) << std::endl;
       return;
     }
     int dbResult = ts7server->RegisterArea(srvAreaDB, 1, dbBuffer, sizeof(dbBuffer));
@@ -126,13 +133,16 @@ namespace s7 {
 
     // Add test data to buffers for debugging client reads
     std::cout << "[S7] Writing test data to buffers..." << std::endl;
-    peBuffer[0] = 0xFF;  // EB0 should read as 0xFF
-    peBuffer[1] = 0xAA;  // EB1 should read as 0xAA
-    peBuffer[2] = 0x55;  // EB2 should read as 0x55
-    paBuffer[0] = 0x11;  // AB0 should read as 0x11
-    paBuffer[1] = 0x22;  // AB1 should read as 0x22
-    paBuffer[2] = 0x33;  // AB2 should read as 0x33
-    std::cout << "[S7] Test data written - EB0=0xFF, EB1=0xAA, EB2=0x55, AB0=0x11, AB1=0x22, AB2=0x33" << std::endl;
+    peBuffer[0] = 0xFF;  // EB0 (PE byte 0)
+    peBuffer[1] = 0xAA;  // EB1
+    peBuffer[2] = 0x55;  // EB2
+    paBuffer[0] = 0x11;  // AB0 (PA byte 0)
+    paBuffer[1] = 0x22;  // AB1
+    paBuffer[2] = 0x33;  // AB2
+    mkBuffer[0] = 0xCC;  // MB0 (MK byte 0)
+    mkBuffer[1] = 0xDD;  // MB1
+    mkBuffer[2] = 0xEE;  // MB2
+    std::cout << "[S7] Test data: EB=FF,AA,55 AB=11,22,33 MB=CC,DD,EE" << std::endl;
 
     // Register server event callbacks for monitoring and logging
     int evtResult = ts7server->SetEventsCallback(OnServerEvent, this);
@@ -169,7 +179,7 @@ namespace s7 {
           continue;
         }
         auto& point = points[kv.second.tag];
-        WriteBinaryToS7(peBuffer, sizeof(peBuffer), BINARY_OFFSET + addr, point.value != 0);
+        WriteBinaryToS7(peBuffer, sizeof(peBuffer), addr, point.value != 0);  // addr is already 0-255
         std::cout << fmt::format("[{}] updated binary input PIB.{} to {}", config.id, addr, point.value) << std::endl;
         metrics->IncrMetric("s7_binary_write_count");
       }
@@ -190,7 +200,7 @@ namespace s7 {
           continue;
         }
         auto& point = points[kv.second.tag];
-        WriteBinaryToS7(paBuffer, sizeof(paBuffer), BINARY_OFFSET + addr, point.value != 0);
+        WriteBinaryToS7(paBuffer, sizeof(paBuffer), addr, point.value != 0);  // addr is already 0-255
         std::cout << fmt::format("[{}] updated binary output PQB.{} to {}", config.id, addr, point.value) << std::endl;
         WriteBinary(addr, point.value != 0);
         metrics->IncrMetric("s7_binary_write_count");
