@@ -530,26 +530,27 @@ namespace s7 {
     
     // Log read events for debugging
     if (pEvent->EvtCode == evcDataRead) {
-      std::cout << fmt::format("[{}] *** CLIENT READ *** Area: {}, Index: {}, Start: {}, Size: {}, RetCode: {}", 
-                server->config.id, pEvent->EvtParam1, pEvent->EvtParam2, 
-                pEvent->EvtParam3, pEvent->EvtParam4, pEvent->EvtRetCode) << std::endl;
+      std::cout << fmt::format("[{}] *** CLIENT READ *** Area: {} (0x{:02X}), Index: {}, Start: {}, Size: {}, RetCode: {}", 
+                server->config.id, pEvent->EvtParam1, pEvent->EvtParam1,
+                pEvent->EvtParam2, pEvent->EvtParam3, pEvent->EvtParam4, pEvent->EvtRetCode) << std::endl;
       
-      // Show actual buffer contents for debugging
-      if (pEvent->EvtParam1 == srvAreaPE && pEvent->EvtParam3 < 32) {
+      // Show actual buffer contents for debugging - use S7 protocol area codes not server IDs
+      // S7AreaPE=0x81, S7AreaPA=0x82, S7AreaMK=0x83
+      if (pEvent->EvtParam1 == S7AreaPE && pEvent->EvtParam3 < 32) {
         std::string hexData;
         for (int i = pEvent->EvtParam3; i < std::min(pEvent->EvtParam3 + pEvent->EvtParam4, 16); i++) {
           hexData += fmt::format("{:02X} ", server->peBuffer[i]);
         }
         std::cout << fmt::format("[{}] PE data being read: {}", server->config.id, hexData) << std::endl;
       }
-      if (pEvent->EvtParam1 == srvAreaPA && pEvent->EvtParam3 < 32) {
+      if (pEvent->EvtParam1 == S7AreaPA && pEvent->EvtParam3 < 32) {
         std::string hexData;
         for (int i = pEvent->EvtParam3; i < std::min(pEvent->EvtParam3 + pEvent->EvtParam4, 16); i++) {
           hexData += fmt::format("{:02X} ", server->paBuffer[i]);
         }
         std::cout << fmt::format("[{}] PA data being read: {}", server->config.id, hexData) << std::endl;
       }
-      if (pEvent->EvtParam1 == srvAreaMK && pEvent->EvtParam3 < 32) {
+      if (pEvent->EvtParam1 == S7AreaMK && pEvent->EvtParam3 < 32) {
         std::string hexData;
         for (int i = pEvent->EvtParam3; i < std::min(pEvent->EvtParam3 + pEvent->EvtParam4, 16); i++) {
           hexData += fmt::format("{:02X} ", server->mkBuffer[i]);
