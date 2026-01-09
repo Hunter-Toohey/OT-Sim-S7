@@ -124,6 +124,16 @@ namespace s7 {
       std::cerr << "[S7] " << SrvErrorText(cbResult) << std::endl;
     }
 
+    // Add test data to buffers for debugging client reads
+    std::cout << "[S7] Writing test data to buffers..." << std::endl;
+    peBuffer[0] = 0xFF;  // EB0 should read as 0xFF
+    peBuffer[1] = 0xAA;  // EB1 should read as 0xAA
+    peBuffer[2] = 0x55;  // EB2 should read as 0x55
+    paBuffer[0] = 0x11;  // AB0 should read as 0x11
+    paBuffer[1] = 0x22;  // AB1 should read as 0x22
+    paBuffer[2] = 0x33;  // AB2 should read as 0x33
+    std::cout << "[S7] Test data written - EB0=0xFF, EB1=0xAA, EB2=0x55, AB0=0x11, AB1=0x22, AB2=0x33" << std::endl;
+
     // Register server event callbacks for monitoring and logging
     int evtResult = ts7server->SetEventsCallback(OnServerEvent, this);
     if (evtResult != 0) {
@@ -238,7 +248,7 @@ namespace s7 {
       std::cout << fmt::format("[{}] PA Buffer (PQW 256-287): {}", config.id, paAnalogHex) << std::endl;
 
       lock.unlock();
-      std::this_thread::sleep_for(std::chrono::seconds(1));
+      //#std::this_thread::sleep_for(std::chrono::seconds(1));
     }
   }
 
