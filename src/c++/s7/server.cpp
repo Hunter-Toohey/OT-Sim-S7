@@ -96,6 +96,14 @@ namespace s7 {
         std::cerr << "[S7] Failed to start Snap7 server!" << std::endl;
         return;
     }
+    
+    // Clear password protection to allow block operations
+    ts7server->ClearPassword();
+    std::cout << "[S7] Password protection cleared for block operations" << std::endl;
+    
+    // Set CPU to RUN status to allow full operations
+    ts7server->SetCPUStatus(S7CpuStatusRun);
+    std::cout << "[S7] CPU status set to RUN" << std::endl;
     //register memory buffers for PE, PA, MK, and DB areas matching real PLC architecture
     //PE = Process Inputs (PIB: digital inputs + PIW: analog inputs)
     //PA = Process Outputs (PQB: digital outputs + PQW: analog outputs)
