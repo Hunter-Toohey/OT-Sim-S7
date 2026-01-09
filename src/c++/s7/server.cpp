@@ -125,11 +125,14 @@ namespace s7 {
       std::cerr << "[S7] " << SrvErrorText(dbResult) << std::endl;
       return;
     }
-    int cbResult = ts7server->SetRWAreaCallback(rwCallback, this);
-    if (cbResult != 0) {
-      std::cerr << "[S7] Failed to register RW-area callback! Error code: " << cbResult << std::endl;
-      std::cerr << "[S7] " << SrvErrorText(cbResult) << std::endl;
-    }
+    
+    // NOTE: RWAreaCallback is commented out because when set, snap7 uses it INSTEAD of registered buffers
+    // This was causing clients to read all zeros even though buffers had data
+    // int cbResult = ts7server->SetRWAreaCallback(rwCallback, this);
+    // if (cbResult != 0) {
+    //   std::cerr << "[S7] Failed to register RW-area callback! Error code: " << cbResult << std::endl;
+    //   std::cerr << "[S7] " << SrvErrorText(cbResult) << std::endl;
+    // }
 
     // Add test data to buffers for debugging client reads
     std::cout << "[S7] Writing test data to buffers..." << std::endl;
