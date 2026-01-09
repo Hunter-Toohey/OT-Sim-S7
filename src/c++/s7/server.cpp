@@ -248,7 +248,7 @@ namespace s7 {
       std::cout << fmt::format("[{}] PA Buffer (PQW 256-287): {}", config.id, paAnalogHex) << std::endl;
 
       lock.unlock();
-      //#std::this_thread::sleep_for(std::chrono::seconds(1));
+      std::this_thread::sleep_for(std::chrono::seconds(1));
     }
   }
 
