@@ -49,6 +49,13 @@ public:
     void HandleMsgBusStatus(const otsim::msgbus::Envelope<otsim::msgbus::Status>& env);
 
     static void OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr);
+    
+    // Event callback handlers for server events
+    static void OnServerEvent(void* usrPtr, PSrvEvent pEvent, int size);
+    static void OnReadEvent(void* usrPtr, PSrvEvent pEvent, int size);
+    
+    // Read/Write area callback for ResourceLess mode support
+    static int OnRWAreaCallback(void* usrPtr, int sender, int operation, PS7Tag pTag, void* pUsrData);
 
 private:
     ServerConfig config;
@@ -68,8 +75,17 @@ private:
 
     std::atomic<bool> running{false};
     
-    byte paBuffer[256] = {0};
-    byte dbBuffer[1024] = {0};
+    // define memroy buffer offsets for where we store things
+    static constexpr uint16_t BINARY_OFFSET = 0;     // Bytes 0-255: binary I/O (PIB/PQB)
+    static constexpr uint16_t ANALOG_OFFSET = 256;   // Bytes 256-511: analog I/O (PIW/PQW)
+    static constexpr uint16_t BINARY_SIZE = 256;
+    static constexpr uint16_t ANALOG_SIZE = 256;
+    
+    // S7 memory buffers - PE/PA hold both binary and analog I/O like real PLCs
+    byte peBuffer[512] = {0};  // PE digital inputs + analog inputs
+    byte paBuffer[512] = {0};  // PA digital outputs + analog outputs
+    byte mkBuffer[256] = {0};  // MK internal flags
+    byte dbBuffer[1024] = {0}; // DB data blocks
 };
 
 } // namespace s7

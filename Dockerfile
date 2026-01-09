@@ -40,8 +40,10 @@ RUN apt update && apt install -y \
     wget
 
 # TODO: add TARGETARCH support for Snap7.
-RUN wget --no-check-certificate -O snap7.7z https://versaweb.dl.sourceforge.net/project/snap7/1.4.2/snap7-full-1.4.2.7z \
-    && 7zz -o/tmp x snap7.7z && rm snap7.7z \
+RUN wget -O snap7.7z \
+https://sourceforge.net/projects/snap7/files/1.4.2/snap7-full-1.4.2.7z/download \
+    && 7zz -o/tmp x snap7.7z \
+    && rm snap7.7z \
     && make -C /tmp/snap7-full-1.4.2/build/unix -f x86_64_linux.mk install LibInstall=/usr/local/lib
 
 ADD .git /usr/local/src/ot-sim/.git
