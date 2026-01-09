@@ -97,10 +97,6 @@ namespace s7 {
         return;
     }
     
-    // Clear password protection to allow block operations
-    ts7server->ClearSessionPassword();
-    std::cout << "[S7] Password protection cleared for block operations" << std::endl;
-    
     // Set CPU to RUN status to allow full operations
     ts7server->SetCpuStatus(S7CpuStatusRun);
     std::cout << "[S7] CPU status set to RUN" << std::endl;
