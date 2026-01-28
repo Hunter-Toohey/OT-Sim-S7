@@ -116,6 +116,17 @@ namespace s7 {
 
     //this is the main running loop, it scans the subscribed points and writes them to memory
     while (running) {
+      TSrvEvent event;
+      if (ts7server->PickEvent(&event)) {
+          char eventText[256]; // Buffer for the event text
+          Srv_EventText(&event, eventText, sizeof(eventText));
+          if (event.EvtCode == evcClientAdded) {
+              std::cout << fmt::format("[{}] CLIENT CONNECTED: [{}]", config.id, eventText) << std::endl;
+          } else if (event.EvtCode == evcClientDisconnected) {
+              std::cout << fmt::format("[{}] CLIENT DISCONNECTED: [{}]", config.id, eventText) << std::endl;
+          } 
+      }
+
       std::unique_lock<std::mutex> lock(pointsMu);
 
       //write binary inputs to PE area (PIB - process input bytes, bytes 0-255)
