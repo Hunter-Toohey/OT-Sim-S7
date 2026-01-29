@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstring>
 #include "server.hpp"
+#include "s7_utils.hpp"
 #include "fmt/format.h"
 #include "msgbus/metrics.hpp"
 #include "snap7.h"
@@ -9,7 +10,9 @@ namespace otsim {
 namespace s7 {
   //when a client talks to a server, this function packages that data into a format understandle by the server
   int S7API rwCallback(void *usrPtr, int Sender, int Operation, PS7Tag PTag, void *pUsrData) {
-    if (!PTag) return 0;
+    if (!PTag || !pUsrData || !usrPtr) return 0;
+
+    auto server = reinterpret_cast<Server*>(usrPtr);
 
     int area = PTag->Area;
     if (area == S7AreaMK) area = srvAreaMK;
@@ -17,30 +20,75 @@ namespace s7 {
     else if (area == S7AreaPE) area = srvAreaPE;
     else if (area == S7AreaPA) area = srvAreaPA;
 
-    Server::OnClientWrite(area, PTag->DBNumber, PTag->Start, PTag->Size, usrPtr);
+    if (Operation == OperationRead) {
+      //if client is reading from server, copy from buffer to pUsrData
+      std::unique_lock<std::mutex> lock(server->pointsMu);
+      if (area == srvAreaPA && static_cast<size_t>(PTag->Start + PTag->Size) <= sizeof(server->paBuffer)) {
+        std::memcpy(pUsrData, server->paBuffer + PTag->Start, PTag->Size);
+      } else if (area == srvAreaDB && static_cast<size_t>(PTag->Start + PTag->Size) <= sizeof(server->dbBuffer)) {
+        std::memcpy(pUsrData, server->dbBuffer + PTag->Start, PTag->Size);
+      } else if (area == srvAreaPE && static_cast<size_t>(PTag->Start + PTag->Size) <= sizeof(server->peBuffer)) {
+        std::memcpy(pUsrData, server->peBuffer + PTag->Start, PTag->Size);
+      } else if (area == srvAreaMK && static_cast<size_t>(PTag->Start + PTag->Size) <= sizeof(server->mkBuffer)) {
+        std::memcpy(pUsrData, server->mkBuffer + PTag->Start, PTag->Size);
+      }
+    } else if (Operation == OperationWrite) {
+      //if client is writing to server, copy from pUsrData to buffer
+      std::unique_lock<std::mutex> lock(server->pointsMu);
+      if (area == srvAreaPA && static_cast<size_t>(PTag->Start + PTag->Size) <= sizeof(server->paBuffer)) {
+        std::memcpy(server->paBuffer + PTag->Start, pUsrData, PTag->Size);
+      } else if (area == srvAreaDB && static_cast<size_t>(PTag->Start + PTag->Size) <= sizeof(server->dbBuffer)) {
+        std::memcpy(server->dbBuffer + PTag->Start, pUsrData, PTag->Size);
+      }
+      lock.unlock();
+
+      //now publish to the msgbus if that write is an output we're publishing to through an xml output
+      Server::OnClientWrite(area, PTag->DBNumber, PTag->Start, PTag->Size, usrPtr, pUsrData);
+    }
 
     return 0;
   }
 
-  //writes a binary to the buffer
-  void WriteBinaryToS7(byte* buffer, size_t bufLen, std::uint16_t addr, bool value) {
-  if (buffer && addr < bufLen) {
-    buffer[addr] = value ? 1 : 0;
-  } else {
-    std::cerr << "[S7] Binary write out of bounds: addr=" << addr << " bufLen=" << bufLen << std::endl;
-  }
+  // writes a binary value to S7 buffer using bit-level addressing
+  void WriteBinaryToS7(byte* buffer, size_t bufLen, std::uint16_t bitAddress, bool value) {
+    if (!utils::writeBit(buffer, bufLen, bitAddress, value)) {
+      std::cerr << "[S7] Binary write out of bounds: bitAddr=" << bitAddress
+                << " (byte " << utils::getByteOffset(bitAddress)
+                << ", bit " << static_cast<int>(utils::getBitOffset(bitAddress))
+                << ") bufLen=" << bufLen << std::endl;
+    }
   }
 
-  //writes analog to the buffer (as 4-byte float at byte-aligned address)
+  // reads a binary value from S7 buffer using bit-level addressing
+  bool ReadBinaryFromS7(byte* buffer, size_t bufLen, std::uint16_t bitAddress) {
+    bool value = false;
+    if (!utils::readBit(buffer, bufLen, bitAddress, value)) {
+      std::cerr << "[S7] Binary read out of bounds: bitAddr=" << bitAddress
+                << " (byte " << utils::getByteOffset(bitAddress)
+                << ", bit " << static_cast<int>(utils::getBitOffset(bitAddress))
+                << ") bufLen=" << bufLen << std::endl;
+    }
+    return value;
+  }
+
+  // writes analog value to S7 buffer as big-endian IEEE 754 float
+  // addr is byte offset in buffer (must be properly aligned)
   void WriteAnalogToS7(byte* buffer, size_t bufLen, std::uint16_t addr, float value) {
-    if (buffer && addr + sizeof(float) <= bufLen) {
-      memcpy(&buffer[addr], &value, sizeof(float));
-    } else {
+    if (!utils::writeReal(buffer, bufLen, addr, value)) {
       std::cerr << "[S7] Analog write out of bounds: addr=" << addr << " bufLen=" << bufLen << std::endl;
     }
   }
 
-  //constructor, initializer metrics
+  // reads analog value from S7 buffer with big-endian to host conversion
+  float ReadAnalogFromS7(byte* buffer, size_t bufLen, std::uint16_t addr) {
+    float value = 0.0f;
+    if (!utils::readReal(buffer, bufLen, addr, value)) {
+      std::cerr << "[S7] Analog read out of bounds: addr=" << addr << " bufLen=" << bufLen << std::endl;
+    }
+    return value;
+  }
+
+  // constructor, initializer metrics
   Server::Server(ServerConfig config, Pusher pusher): config(config), pusher(pusher) {
     metrics = std::make_shared<otsim::msgbus::MetricsPusher>();
     if (!metrics) {
@@ -53,9 +101,10 @@ namespace s7 {
     }
   }
   
-  //run the server loop and update memory
+  // run the server loop and update memory
   void Server::Run(std::shared_ptr<TS7Server> ts7server) {
     this->ts7server = ts7server;
+
     //debugging output
     if (!metrics || !pusher) {
         std::cerr << "[S7] Metrics or pusher not initialized!" << std::endl;
@@ -73,10 +122,6 @@ namespace s7 {
     ts7server->SetCpuStatus(S7CpuStatusRun);
     std::cout << "[S7] CPU status set to RUN (block operations enabled)" << std::endl;
     //register memory buffers for PE, PA, MK, and DB areas matching real PLC architecture
-    //PE = process Inputs (PIB: digital inputs + PIW: analog inputs)
-    //PA = process Outputs (PQB: digital outputs + PQW: analog outputs)
-    //MK = merker (internal flags/markers for intermediate calculations)
-    //DB = data blocks
     int peResult = ts7server->RegisterArea(srvAreaPE, 0, peBuffer, sizeof(peBuffer));
     if (peResult != 0) {
       std::cerr << "[S7] Failed to register PE area! Error code: " << peResult << std::endl;
@@ -105,11 +150,19 @@ namespace s7 {
     //enable important server events
     //enable block upload/download, directory operations, and client events
     //this maybe can be deleted?
-    longword eventMask = evcServerStarted | evcServerStopped | 
+    longword eventMask = evcServerStarted | evcServerStopped |
                          evcClientAdded | evcClientDisconnected |
                          evcUpload | evcDownload | evcDirectory |
                          evcDataRead | evcDataWrite;
     ts7server->SetEventsMask(eventMask);
+
+    //register read/write callback to handle client writes to outputs
+    int callbackResult = ts7server->SetRWAreaCallback(rwCallback, this);
+    if (callbackResult != 0) {
+      std::cerr << "[S7] Failed to register RW area callback! Error code: " << callbackResult << std::endl;
+      return;
+    }
+    std::cout << "[S7] RW area callback registered" << std::endl;
 
     //debugging output
     std::cout << "[S7] Server started, memory areas registered, and callbacks configured." << std::endl;
@@ -129,7 +182,8 @@ namespace s7 {
 
       std::unique_lock<std::mutex> lock(pointsMu);
 
-      //write binary inputs to PE area (PIB - process input bytes, bytes 0-255)
+      //write binary inputs to DB area (bytes 0-255)
+      //inputs receive data from message bus status messages and expose them to S7 clients as DB data
       for (auto& kv : binaryInputs) {
         const auto& addr = kv.first;
         if (points.find(kv.second.tag) == points.end()) {
@@ -137,26 +191,13 @@ namespace s7 {
           continue;
         }
         auto& point = points[kv.second.tag];
-        WriteBinaryToS7(peBuffer, sizeof(peBuffer), addr, point.value != 0);
-        std::cout << fmt::format("[{}] updated binary input PIB.{} to {}", config.id, addr, point.value) << std::endl;
+        WriteBinaryToS7(dbBuffer, sizeof(dbBuffer), addr, point.value != 0);
+        std::cout << fmt::format("[{}] updated binary input DB.{} to {}", config.id, addr, point.value) << std::endl;
         metrics->IncrMetric("s7_binary_write_count");
       }
 
-      //write binary outputs to PA area (PQB - process output bytes, bytes 0-255)
-      for (auto& kv : binaryOutputs) {
-        const auto& addr = kv.first;
-        if (points.find(kv.second.tag) == points.end()) {
-          std::cerr << "[S7] binaryOutputs: tag not found: " << kv.second.tag << std::endl;
-          continue;
-        }
-        auto& point = points[kv.second.tag];
-        WriteBinaryToS7(paBuffer, sizeof(paBuffer), addr, point.value != 0);  // addr is already 0-255
-        std::cout << fmt::format("[{}] updated binary output PQB.{} to {}", config.id, addr, point.value) << std::endl;
-        WriteBinary(addr, point.value != 0);
-        metrics->IncrMetric("s7_binary_write_count");
-      }
-
-      //write analog inputs to PE area (PIW - process input words, bytes 256+)
+      //write analog inputs to DB area (bytes 256+, 4 bytes per analog value)
+      //inputs receive data from message bus Status messages and expose them to S7 clients as DB data
       for (auto& kv : analogInputs) {
         const auto& addr = kv.first;
         if (points.find(kv.second.tag) == points.end()) {
@@ -164,22 +205,8 @@ namespace s7 {
           continue;
         }
         auto& point = points[kv.second.tag];
-        WriteAnalogToS7(peBuffer, sizeof(peBuffer), ANALOG_OFFSET + addr, static_cast<float>(point.value));
-        std::cout << fmt::format("[{}] updated analog input PIW.{} to {}", config.id, addr, point.value) << std::endl;
-        metrics->IncrMetric("s7_analog_write_count");
-      }
-
-      //write analog outputs to PA area (PQW - process output words, bytes 256+)
-      for (auto& kv : analogOutputs) {
-        const auto& addr = kv.first;
-        if (points.find(kv.second.tag) == points.end()) {
-          std::cerr << "[S7] analogOutputs: tag not found: " << kv.second.tag << std::endl;
-          continue;
-        }
-        auto& point = points[kv.second.tag];
-        WriteAnalogToS7(paBuffer, sizeof(paBuffer), ANALOG_OFFSET + addr, static_cast<float>(point.value));
-        std::cout << fmt::format("[{}] updated analog output PQW.{} to {}", config.id, addr, point.value) << std::endl;
-        WriteAnalog(addr, point.value);
+        WriteAnalogToS7(dbBuffer, sizeof(dbBuffer), ANALOG_OFFSET + addr, static_cast<float>(point.value));
+        std::cout << fmt::format("[{}] updated analog input DB.{} to {}", config.id, addr, point.value) << std::endl;
         metrics->IncrMetric("s7_analog_write_count");
       }
 
@@ -188,37 +215,42 @@ namespace s7 {
     }
   }
 
-  //when a client writes into server memory this function updates the message bus
-  void Server::OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr) {
+  void Server::OnClientWrite(int area, int dbNumber, int start, int size, void* usrPtr, void* pUsrData) {
     auto server = reinterpret_cast<Server*>(usrPtr);
     std::unique_lock<std::mutex> lock(server->pointsMu);
 
-    //handle PA area writes (both binary and analog outputs)
+    //NOTE: Data has already been copied from pUsrData to our buffer in rwCallback
+    //This function just processes the write (updates points map and publishes to message bus)
+
+    //handle PA area writes (Process Image Outputs - both binary and analog)
     if (area == srvAreaPA) {
-      //check if this is binary output write (PQB, bytes 0-255)
+      //check if this is binary output write (Q area, bytes 0-255)
       if (start >= server->BINARY_OFFSET && start < server->BINARY_OFFSET + server->BINARY_SIZE) {
         if (static_cast<size_t>(start) < sizeof(server->paBuffer)) {
-          uint16_t addr = start - server->BINARY_OFFSET;
-          bool val = server->paBuffer[start] != 0;
-          if (server->binaryOutputs.find(addr) == server->binaryOutputs.end()) {
-            std::cerr << "[S7] OnClientWrite PA: binaryOutputs not found for PQB." << addr << std::endl;
+          // use bit-level addressing to read the binary value
+          uint16_t bitAddr = start - server->BINARY_OFFSET;
+          bool val = ReadBinaryFromS7(server->paBuffer, sizeof(server->paBuffer), bitAddr);
+
+          if (server->binaryOutputs.find(bitAddr) == server->binaryOutputs.end()) {
+            std::cerr << "[S7] OnClientWrite PA: binaryOutputs not found for bit address " << bitAddr << " (Q" << utils::getByteOffset(bitAddr) << "." << static_cast<int>(utils::getBitOffset(bitAddr)) << ")" << std::endl;
             return;
           }
-          const auto& tag = server->binaryOutputs[addr].tag;
+          const auto& tag = server->binaryOutputs[bitAddr].tag;
           if (server->points.find(tag) == server->points.end()) {
             std::cerr << "[S7] OnClientWrite PA: points not found for tag=" << tag << std::endl;
             return;
           }
           server->points[tag].value = val ? 1.0 : 0.0;
-          server->WriteBinary(addr, val);
-          std::cout << fmt::format("[S7] Client wrote PQB.{} = {}", addr, val) << std::endl;
+          server->WriteBinary(bitAddr, val);
+          std::cout << fmt::format("[S7] Client wrote Q{}.{} (bit addr {}) = {}", utils::getByteOffset(bitAddr), static_cast<int>(utils::getBitOffset(bitAddr)), bitAddr, val) << std::endl;
         }
       }
-      //check if this is analog output write (PQW, bytes 256+)
+      //check if this is analog output write (Q area, bytes 256+)
       else if (start >= server->ANALOG_OFFSET && start + sizeof(float) <= sizeof(server->paBuffer)) {
         uint16_t addr = start - server->ANALOG_OFFSET;
-        float val;
-        memcpy(&val, &server->paBuffer[start], sizeof(float));
+        // Use big-endian aware read function
+        float val = ReadAnalogFromS7(server->paBuffer, sizeof(server->paBuffer), start);
+
         if (server->analogOutputs.find(addr) == server->analogOutputs.end()) {
           std::cerr << "[S7] OnClientWrite PA: analogOutputs not found for PQW." << addr << std::endl;
           return;
@@ -230,7 +262,7 @@ namespace s7 {
         }
         server->points[tag].value = val;
         server->WriteAnalog(addr, val);
-        std::cout << fmt::format("[S7] Client wrote PQW.{} = {}", addr, val) << std::endl;
+        std::cout << fmt::format("[S7] Client wrote PQW.{} (byte {}) = {}", addr, start, val) << std::endl;
       }
     }
     // DB area writes are for structured data, not I/O

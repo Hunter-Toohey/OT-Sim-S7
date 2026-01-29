@@ -240,31 +240,29 @@ docker exec -it ot-test sh -c "cd testing/dnp3 && python3 master.py"
 
 #### TESTING S7comm
 
-To test S7comm, you can clone this repo and create an example client.
+There are a few scripts located in the `s7test` folder.
+In order to run these, make sure you have the python snap7 library installed: `pip install python-snap7`. Also run `chmod +x *` in that folder to make them executable.
+Then, start OT-sim using `\OT-Sim-S7\config\single-device\dam_sim.xml`. `procfile.single` is currently set to use this config.
+To start it, run this command (which exposes the ports):
 ```
-https://github.com/SCADACS/snap7/tree/master
+sudo docker run -it --rm --name ot-test -p 102:102 -p 1234:1234 -p 5678:5678 ot-sim hivemind Procfile.single
 ```
-To run an example client, run the following commands:
+This will generate an S7 server that is subcribing to the `dam.servo.position` tag and saving that data to the 4th slot in analog `DB` (datablocks) memory,
+and publishing the contents of it's 4th slot in `PA` (peripheral output/ image outpus/ Q memory) memory to `dam.servo.position`. It will only contain zeros as long
+as those tags aren't updated externally.
+Run `\OT-Sim-S7\s7test\dam_sim.py` to make a fake dam simulator (very simple version that just opens and closes a dam with no logic, while 1=1)
+that pushes values to the `dam.servo.position` in the message bus of OT-sim, which the server is subscribed to. This will cause for the datablocks being outputted
+by the S7 server to be updated. The purpose of this is to show that the server can subscribe to logic modules that are pushing to tags that it is subscribed to.
+To simulate a client writing to server memory, run `\OT-Sim-S7\s7test\client_test.py`. This script will start a snap7 client, connect to the server, and edit the server's
+PA memory. When ran, you should see a message like this:
 ```
-cd snap7
-mkdir -p bin/x86_64-linux
-cd build/unix
-make -f x86_64_linux.mk clean
-make -f x86_64_linux.mk
-cd ../../examples/cpp/x86_64-linux
-g++ -O3 -o client ../client.cpp ../snap7.cpp -L../../../build/bin/x86_64-linux -lsnap7 -lpthread -lrt
+cpu    | 2026/01/30 20:48:17 [RUNTIME] {"contents":{"confirm":"","recipient":"","updates":[{"tag":"dam.servo.position","ts":0,"value":75.0}]},"kind":"Update","metadata":{"sender":"dam-servo-controller"},"version":"v1"}
 ```
-Then, in the ot-sim repo edit Procfile.single to reference a device
-with s7comm on it (devices 3 and 4 have S7comm by default), run the command:
-```
-sudo docker run -it --rm --name ot-test -p 102:102 ot-sim hivemind Procfile.single
-```
-Back in `/snap7/examples/cpp/x86_64-linux`, run:
-
-```
-LD_LIBRARY_PATH=../../../build/bin/x86_64-linux ./client 0.0.0.0
-```
-You should see the the S7 client is able to connect to your OT-sim S7 server on port 102.
+This indicates that a position in `PA` memory that our S7 server has as an `output` has been updated (outputs mean we publish from that memory location to the message bus
+under that tag, inputs mean we grab values from that tag and store them in the listed memory address). Because we also subscribe to that tag as an input, we will see that
+our `DB` memory is updated, not just our `PA` memory that was pushed to by the client.
+To test that our memory is being changed as we expect, run `\OT-Sim-S7\s7test\memory_dump.py`. This will create a snap7 client that connects to the server and reads
+PA and DB memory from it. If you run this script, after running one of the other test scripts, you should be able to see that the memory is actually being changed as expected.
 
 
 ## COPYRIGHT

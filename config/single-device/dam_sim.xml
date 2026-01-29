@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<ot-sim>
+  <message-bus>
+    <pull-endpoint>tcp://0.0.0.0:1234</pull-endpoint>
+    <pub-endpoint>tcp://0.0.0.0:5678</pub-endpoint>
+  </message-bus>
+  <cpu>
+    <module name="backplane">ot-sim-message-bus {{config_file}}</module>
+    <module name="s7comm">ot-sim-s7comm-module {{config_file}}</module>
+  </cpu>
+  <s7comm name="dam-servo-controller" mode="server">
+    <endpoint>0.0.0.0:102</endpoint>
+
+    <input type="analog">
+      <address>4</address>
+      <tag>dam.servo.position</tag>
+    </input>
+
+    <output type="analog">
+      <address>4</address>
+      <tag>dam.servo.position</tag>
+    </output>
+
+  </s7comm>
+</ot-sim>
